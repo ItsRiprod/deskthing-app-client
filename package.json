@@ -1,6 +1,6 @@
 {
   "name": "deskthing-client",
-  "version": "0.7.5",
+  "version": "0.8.0",
   "description": "The Deskthing connector for the client webapps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -20,6 +20,14 @@
     "car-thing",
     "app-development"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ItsRiprod/deskthing-app-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ItsRiprod/deskthing-app-client/issues"
+  },
+  "homepage": "https://github.com/ItsRiprod/deskthing-app-client#readme",
   "author": "Riprod",
   "license": "MIT",
   "devDependencies": {
