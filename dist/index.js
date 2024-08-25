@@ -7,6 +7,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+export * from './types';
 export class DeskThing {
     /**
      * Initializes the DeskThing instance and sets up event listeners.
@@ -18,7 +19,7 @@ export class DeskThing {
         this.initialize();
         document.addEventListener('keydown', (event) => {
             const key = event.code;
-            this.sendMessageToParent({ app: 'client', type: 'action', payload: { button: key, flavor: 'Short' } });
+            this.sendMessageToParent({ app: 'client', type: 'button', payload: { button: key, flavor: 'Short' } });
         });
     }
     /**

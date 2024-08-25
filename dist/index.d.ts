@@ -1,5 +1,6 @@
 import { SocketData, EventTypes } from './types';
 type EventCallback = (data: any) => void;
+export * from './types';
 export declare class DeskThing {
     private static instance;
     private listeners;

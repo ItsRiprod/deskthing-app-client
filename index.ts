@@ -1,7 +1,7 @@
 import { SocketData, AppTypes, EventTypes } from './types';
 
 type EventCallback = (data: any) => void;
-
+ export * from './types'
 
 export class DeskThing {
     private static instance: DeskThing
@@ -16,7 +16,7 @@ export class DeskThing {
         this.initialize();
         document.addEventListener('keydown', (event: KeyboardEvent) => {
             const key = event.code;
-            this.sendMessageToParent({ app: 'client', type: 'action', payload: { button: key, flavor: 'Short' }});
+            this.sendMessageToParent({ app: 'client', type: 'button', payload: { button: key, flavor: 'Short' }});
         });
     }
 
