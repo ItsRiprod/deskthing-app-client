@@ -2,9 +2,7 @@ export interface SocketData {
     app?: string;
     type?: string;
     request?: string;
-    payload?: Array<string> | string | object | number | {
-        [key: string]: string | Array<string>;
-    } | App[] | boolean;
+    payload?: any;
 }
 export type AppTypes = 'client' | 'server' | string;
 export type EventTypes = 'get' | 'set' | 'message' | 'log' | 'error' | 'data' | 'apps' | 'message' | 'music' | 'settings' | string;
