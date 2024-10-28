@@ -63,19 +63,48 @@ export interface App {
     prefIndex: number;
     manifest?: Manifest;
 }
-export interface Settings {
-    [key: string]: {
-        [setting: string]: {
-            value: string | number;
-            label: string;
-            options: [
-                {
-                    value: string | number;
-                    label: string;
-                }
-            ];
-        };
-    };
+export interface SettingsNumber {
+    value: number;
+    type: 'number';
+    min: number;
+    max: number;
+    label: string;
+    description?: string;
+}
+export interface SettingsBoolean {
+    value: boolean;
+    type: 'boolean';
+    label: string;
+    description?: string;
+}
+export interface SettingsString {
+    value: string;
+    type: 'string';
+    label: string;
+    description?: string;
+}
+export interface SettingsSelect {
+    value: string;
+    type: 'select';
+    label: string;
+    description?: string;
+    options: {
+        label: string;
+        value: string;
+    }[];
+}
+export interface SettingsMultiSelect {
+    value: boolean[];
+    type: 'multiselect';
+    label: string;
+    description?: string;
+    options: {
+        label: string;
+    }[];
+}
+export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect;
+export interface AppSettings {
+    [key: string]: SettingsType;
 }
 type EventCallback = (data: any) => void;
 export declare class DeskThing {
