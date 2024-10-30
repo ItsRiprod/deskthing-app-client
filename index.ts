@@ -106,12 +106,13 @@ export interface App {
   }
   
   export interface SettingsMultiSelect {
-    value: boolean[]
+    value: string[]
     type: 'multiselect'
     label: string
     description?: string
     options: {
-      label: string
+      label: string,
+      value: string
     }[]
   }
   
@@ -139,9 +140,12 @@ export class DeskThing {
      */
     constructor() {
         this.initialize();
-        document.addEventListener('keydown', (event: KeyboardEvent) => {
-            const key = event.code;
-            this.sendMessageToParent({ app: 'client', type: 'button', payload: { button: key, flavor: 'Short' }});
+        const eventsToForward = ['wheel', 'keydown', 'keyup', 'mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend'];
+        const forwardEvent = (event: Event) => window.dispatchEvent(event);
+        const options = { capture: true, passive: true, throttled: 16 } as AddEventListenerOptions;
+        
+        eventsToForward.forEach(eventType => {
+            document.addEventListener(eventType, forwardEvent, options);
         });
     }
 

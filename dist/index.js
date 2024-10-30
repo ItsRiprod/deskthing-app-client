@@ -31,9 +31,11 @@ export class DeskThing {
     constructor() {
         this.listeners = {};
         this.initialize();
-        document.addEventListener('keydown', (event) => {
-            const key = event.code;
-            this.sendMessageToParent({ app: 'client', type: 'button', payload: { button: key, flavor: 'Short' } });
+        const eventsToForward = ['wheel', 'keydown', 'keyup', 'mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend'];
+        const forwardEvent = (event) => window.dispatchEvent(event);
+        const options = { capture: true, passive: true, throttled: 16 };
+        eventsToForward.forEach(eventType => {
+            document.addEventListener(eventType, forwardEvent, options);
         });
     }
     /**

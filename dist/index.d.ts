@@ -94,12 +94,13 @@ export interface SettingsSelect {
     }[];
 }
 export interface SettingsMultiSelect {
-    value: boolean[];
+    value: string[];
     type: 'multiselect';
     label: string;
     description?: string;
     options: {
         label: string;
+        value: string;
     }[];
 }
 export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect;
