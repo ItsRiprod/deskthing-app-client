@@ -1,29 +1,89 @@
-# Deskthing Client NPM
+# DeskThing Client NPM
 
-The DeskThing-App is one of two required moduels needed to make your own DeskThing App. It serves as a communication layer between your webpage and the rest of the client. 
+The DeskThing-App is one of two required modules needed to make your own DeskThing App. It serves as a communication layer between your webpage and the rest of the client.
 
-You can install it with
-```
+## Installation
+
+To install the client, use the following command:
+
+```sh
 npm install deskthing-client
 ```
 
-In brief, you will use the client to communicate with the rest of the application from your webpage. For instance, to send a JSON object to the server, you will do
-```ts
-import DeskThing from 'deskthing-client'
+## Usage
 
-const deskThing = DeskThing.getInstance()
+### Initializing the DeskThing Client
 
-deskThing.sendMessageToServer({type: 'set', payload: examplePayload})
+To use the DeskThing client in your application, you need to import it and get an instance:
+
+```typescript
+import DeskThing from 'deskthing-client';
+
+const deskThing = DeskThing.getInstance();
 ```
 
-To receive this payload, you will need to have the following on your server
-```ts
-import DeskThing from 'deskthing-server'
+### Sending Messages to the Server
 
-const deskThing = DeskThing.getInstance()
+You can send messages to the server using the `sendMessageToServer` method. For example, to send a JSON object to the server:
 
-deskThing.on('set', (socketData) => console.log(socketData.payload))
+```typescript
+deskThing.sendMessageToServer({ type: 'set', payload: examplePayload });
 ```
 
-Keep in mind, this README is still in development and all the examples here should be taken lightly. The intended implementation can be found in the apps located at https://github.com/itsriprod/deskthing-apps 
+### Receiving Messages on the Server
+
+On the server side, you need to import the DeskThing server module and listen for events:
+
+```typescript
+import DeskThing from 'deskthing-server';
+
+const deskThing = DeskThing.getInstance();
+
+deskThing.on('set', (socketData) => {
+console.log(socketData.payload);
+});
+```
+
+### Example: Two-Way Communication
+
+Here is a more complete example demonstrating two-way communication between the client and server:
+
+#### Client Side
+
+```typescript
+import DeskThing from 'deskthing-client';
+
+const deskThing = DeskThing.getInstance();
+
+// Sending a message to the server
+deskThing.sendMessageToServer({ type: 'set', payload: { key: 'value' } });
+
+// Listening for a response from the server
+deskThing.on('response', (data) => {
+  console.log('Received response from server:', data);
+});
+```
+
+#### Server Side
+
+```ts
+import DeskThing from 'deskthing-server';
+
+const deskThing = DeskThing.getInstance();
+
+// Listening for a 'set' message from the client
+deskThing.on('set', (socketData) => {
+  console.log('Received payload:', socketData.payload);
+
+  // Sending a response back to the client
+  deskThing.sendMessageToClient(socketData.socketId, {
+    type: 'response',
+    payload: { message: 'Data received successfully' }
+  });
+});
+```
+
+## Additional Information
+
+For more detailed examples and intended implementations, please refer to the apps located at https://github.com/itsriprod/deskthing-apps 
 
