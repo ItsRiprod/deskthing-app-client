@@ -87,10 +87,21 @@ export interface App {
     description?: string
   }
   
+  export interface SettingsRange {
+    value: number
+    type: 'range'
+    label: string
+    min: number
+    max: number
+    step?: number
+    description?: string
+  }
+  
   export interface SettingsString {
     value: string
     type: 'string'
     label: string
+    maxLength?: number
     description?: string
   }
   
@@ -99,10 +110,21 @@ export interface App {
     type: 'select'
     label: string
     description?: string
-    options: {
-      label: string
-      value: string
-    }[]
+    placeholder?: string
+    options: SettingOption[]
+  }
+  
+  export type SettingOption = {
+    label: string
+    value: string
+  }
+  
+  export interface SettingsRanked {
+    value: string[]
+    type: 'ranked'
+    label: string
+    description?: string
+    options: SettingOption[]
   }
   
   export interface SettingsMultiSelect {
@@ -110,10 +132,8 @@ export interface App {
     type: 'multiselect'
     label: string
     description?: string
-    options: {
-      label: string,
-      value: string
-    }[]
+    placeholder?: string
+    options: SettingOption[]
   }
   
   export type SettingsType =
@@ -122,10 +142,42 @@ export interface App {
     | SettingsString
     | SettingsSelect
     | SettingsMultiSelect
+    | SettingsRange
+    | SettingsRanked
   
   export interface AppSettings {
     [key: string]: SettingsType
   }
+
+  export enum EventMode {
+    KeyUp,
+    KeyDown,
+    ScrollUp,
+    ScrollDown,
+    ScrollLeft,
+    ScrollRight,
+    SwipeUp,
+    SwipeDown,
+    SwipeLeft,
+    SwipeRight,
+    PressShort,
+    PressLong
+  }
+
+  export type Action = {
+    name?: string // User Readable name
+    description?: string // User Readable description
+    id: string // System-level ID
+    value?: string // The value to be passed to the action. This is included when the action is triggered
+    value_options?: string[] // The options for the value
+    value_instructions?: string // Instructions for the user to set the value
+    icon?: string // The name of the icon the action uses - if left blank, the action will use the icon's id
+    source: string // The origin of the action
+    version: string // The version of the action
+    enabled: boolean // Whether or not the app associated with the action is enabled
+  }
+
+
 
 type EventCallback = (data: any) => void;
 
@@ -138,23 +190,63 @@ export class DeskThing {
      * Sends a message to the parent indicating that the client has started.
      * Also sets up a click event listener for buttons.
      */
-    constructor() {
-        this.initialize();
-        const eventsToForward = ['wheel', 'keydown', 'keyup', 'mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend'];
-        const forwardEvent = (event: Event) => window.dispatchEvent(event);
-        const options = { capture: true, passive: true, throttled: 16 } as AddEventListenerOptions;
-        
-        eventsToForward.forEach(eventType => {
-            document.addEventListener(eventType, forwardEvent, options);
-        });
-    }
-
+      constructor() {
+          this.initialize();
+          this.initializeListeners();
+      }
     /**
      * Initializes the message event listener.
      * @private
      */
     private initialize() {
         window.addEventListener('message', this.handleMessage.bind(this));
+    }
+
+    /**
+     * Sets up the listeners and bubbles them to the server
+     * @private
+     */
+    private async initializeListeners() {
+      const eventsToForward = ['wheel', 'keydown', 'keyup'];
+          const forwardEvent = (event: Event) => {
+
+            // Check if event was prevented elsewhere
+            if (event.defaultPrevented) {
+              return;
+            }
+
+            // Check if it is a keyboard event and handle those differently
+            if (event instanceof KeyboardEvent) {
+
+              // Get the code for the key that was pressed
+              const key = event.code;
+              // 'bubble' the event to the server. 'flavor' is depreciated but used for backwards-compatibility. Will be removed in a future update.
+              const mode = event.type === 'keydown' ? 'KeyDown' : 'KeyUp';
+              const flavor = event.type === 'keydown' ? 'Down' : 'Up';
+              this.send({ app: 'client', type: 'button', payload: { button: key, mode, flavor }});
+              this.send({ app: 'client', type: 'button', payload: { button: key, mode, flavor }});
+
+              // There should be logic for long presses, but those are not supported yet!
+
+            } else if (event instanceof WheelEvent) {
+              
+              // Initialize the mode of the button press
+              let mode = 'Up';
+              
+              if (event.deltaY > 0) mode = 'Down';
+              else if (event.deltaY < 0) mode = 'Up';
+              else if (event.deltaX > 0) mode = 'Right';
+              else if (event.deltaX < 0) mode = 'Left';
+              
+              // Added "flavor" for backwards compatibility. It's not needed in later versions
+              this.send({ app: 'client', type: 'button', payload: { button: 'Scroll', flavor: mode, mode }});
+            }
+          }
+          const options = { capture: true, passive: false } as AddEventListenerOptions;
+        
+          eventsToForward.forEach(eventType => {
+              document.addEventListener(eventType, forwardEvent, options);
+          });
     }
 
     /**
@@ -187,11 +279,11 @@ export class DeskThing {
             this.listeners[event] = [];
         }
         if (event === 'apps' || event === 'message' || event === 'music' || event === 'settings') {
-            this.sendMessageToParent({app: 'client', request: event, type: 'on'})
+            this.send({app: 'client', request: event, type: 'on'})
 
             this.listeners[event]!.push(callback);
             return () => {
-                this.sendMessageToParent({app: 'client', request: event, type: 'off'})
+                this.send({app: 'client', request: event, type: 'off'})
                 this.off(event, callback);
             }
         }
@@ -256,7 +348,7 @@ export class DeskThing {
     /**
      * Sends a message to the parent window.
      * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
-     * 
+     * @deprecated Use send() instead
      * @example
      * deskThing.sendMessageToParent({
      *   app: 'client',
@@ -265,6 +357,21 @@ export class DeskThing {
      * });
      */
     public sendMessageToParent(data: SocketData) {
+        this.send(data)
+    }
+
+    /**
+     * Sends a message to the parent window.
+     * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
+     * 
+     * @example
+     * deskThing.send({
+     *   app: 'client',
+     *   type: 'action',
+     *   payload: { buttonClicked: 'submit' }
+     * });
+     */
+    public send(data: SocketData) {
         const payload = {
             app: data.app || undefined,
             type: data.type || undefined,

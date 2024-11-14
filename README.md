@@ -24,10 +24,10 @@ const deskThing = DeskThing.getInstance();
 
 ### Sending Messages to the Server
 
-You can send messages to the server using the `sendMessageToServer` method. For example, to send a JSON object to the server:
+You can send messages to the server using the `send` method. For example, to send a JSON object to the server:
 
 ```typescript
-deskThing.sendMessageToServer({ type: 'set', payload: examplePayload });
+deskThing.send({ type: 'set', payload: examplePayload });
 ```
 
 ### Receiving Messages on the Server
@@ -56,7 +56,7 @@ import DeskThing from 'deskthing-client';
 const deskThing = DeskThing.getInstance();
 
 // Sending a message to the server
-deskThing.sendMessageToServer({ type: 'set', payload: { key: 'value' } });
+deskThing.send({ type: 'set', payload: { key: 'value' } });
 
 // Listening for a response from the server
 deskThing.on('response', (data) => {

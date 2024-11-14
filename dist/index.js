@@ -31,8 +31,25 @@ export class DeskThing {
     constructor() {
         this.listeners = {};
         this.initialize();
-        const eventsToForward = ['wheel', 'keydown', 'keyup', 'mousedown', 'mouseup', 'touchstart', 'touchmove', 'touchend'];
-        const forwardEvent = (event) => window.dispatchEvent(event);
+        const eventsToForward = ['wheel', 'keydown', 'keyup'];
+        const forwardEvent = (event) => {
+            if (event instanceof KeyboardEvent) {
+                const key = event.code;
+                this.sendMessageToParent({ app: 'client', type: 'button', payload: { button: key, flavor: 'Short' } });
+            }
+            else if (event instanceof WheelEvent) {
+                let flavor = 'Up';
+                if (event.deltaY > 0)
+                    flavor = 'Down';
+                else if (event.deltaY < 0)
+                    flavor = 'Up';
+                else if (event.deltaX > 0)
+                    flavor = 'Right';
+                else if (event.deltaX < 0)
+                    flavor = 'Left';
+                this.sendMessageToParent({ app: 'client', type: 'button', payload: { button: 'Scroll', flavor } });
+            }
+        };
         const options = { capture: true, passive: true, throttled: 16 };
         eventsToForward.forEach(eventType => {
             document.addEventListener(eventType, forwardEvent, options);
