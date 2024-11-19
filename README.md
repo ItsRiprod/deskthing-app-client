@@ -76,7 +76,7 @@ deskThing.on('set', (socketData) => {
   console.log('Received payload:', socketData.payload);
 
   // Sending a response back to the client
-  deskThing.sendMessageToClient(socketData.socketId, {
+  deskThing.sendDataToClient(socketData.socketId, {
     type: 'response',
     payload: { message: 'Data received successfully' }
   });
