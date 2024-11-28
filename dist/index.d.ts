@@ -77,10 +77,20 @@ export interface SettingsBoolean {
     label: string;
     description?: string;
 }
+export interface SettingsRange {
+    value: number;
+    type: 'range';
+    label: string;
+    min: number;
+    max: number;
+    step?: number;
+    description?: string;
+}
 export interface SettingsString {
     value: string;
     type: 'string';
     label: string;
+    maxLength?: number;
     description?: string;
 }
 export interface SettingsSelect {
@@ -88,25 +98,58 @@ export interface SettingsSelect {
     type: 'select';
     label: string;
     description?: string;
-    options: {
-        label: string;
-        value: string;
-    }[];
+    placeholder?: string;
+    options: SettingOption[];
+}
+export type SettingOption = {
+    label: string;
+    value: string;
+};
+export interface SettingsRanked {
+    value: string[];
+    type: 'ranked';
+    label: string;
+    description?: string;
+    options: SettingOption[];
 }
 export interface SettingsMultiSelect {
     value: string[];
     type: 'multiselect';
     label: string;
     description?: string;
-    options: {
-        label: string;
-        value: string;
-    }[];
+    placeholder?: string;
+    options: SettingOption[];
 }
-export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect;
+export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect | SettingsRange | SettingsRanked;
 export interface AppSettings {
     [key: string]: SettingsType;
 }
+export declare enum EventMode {
+    KeyUp = 0,
+    KeyDown = 1,
+    ScrollUp = 2,
+    ScrollDown = 3,
+    ScrollLeft = 4,
+    ScrollRight = 5,
+    SwipeUp = 6,
+    SwipeDown = 7,
+    SwipeLeft = 8,
+    SwipeRight = 9,
+    PressShort = 10,
+    PressLong = 11
+}
+export type Action = {
+    name?: string;
+    description?: string;
+    id: string;
+    value?: string;
+    value_options?: string[];
+    value_instructions?: string;
+    icon?: string;
+    source: string;
+    version: string;
+    enabled: boolean;
+};
 type EventCallback = (data: any) => void;
 export declare class DeskThing {
     private static instance;
@@ -122,6 +165,11 @@ export declare class DeskThing {
      * @private
      */
     private initialize;
+    /**
+     * Sets up the listeners and bubbles them to the server
+     * @private
+     */
+    private initializeListeners;
     /**
      * Singleton pattern: Ensures only one instance of DeskThing exists.
      * @returns {DeskThing} The single instance of DeskThing
@@ -168,7 +216,7 @@ export declare class DeskThing {
     /**
      * Sends a message to the parent window.
      * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
-     *
+     * @deprecated Use send() instead
      * @example
      * deskThing.sendMessageToParent({
      *   app: 'client',
@@ -177,6 +225,18 @@ export declare class DeskThing {
      * });
      */
     sendMessageToParent(data: SocketData): void;
+    /**
+     * Sends a message to the parent window.
+     * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
+     *
+     * @example
+     * deskThing.send({
+     *   app: 'client',
+     *   type: 'action',
+     *   payload: { buttonClicked: 'submit' }
+     * });
+     */
+    send(data: SocketData): void;
 }
 declare const _default: DeskThing;
 export default _default;

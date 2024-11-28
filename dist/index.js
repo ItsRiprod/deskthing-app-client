@@ -22,6 +22,21 @@ export var AUDIO_REQUESTS;
     AUDIO_REQUESTS["REPEAT"] = "repeat";
     AUDIO_REQUESTS["SHUFFLE"] = "shuffle";
 })(AUDIO_REQUESTS || (AUDIO_REQUESTS = {}));
+export var EventMode;
+(function (EventMode) {
+    EventMode[EventMode["KeyUp"] = 0] = "KeyUp";
+    EventMode[EventMode["KeyDown"] = 1] = "KeyDown";
+    EventMode[EventMode["ScrollUp"] = 2] = "ScrollUp";
+    EventMode[EventMode["ScrollDown"] = 3] = "ScrollDown";
+    EventMode[EventMode["ScrollLeft"] = 4] = "ScrollLeft";
+    EventMode[EventMode["ScrollRight"] = 5] = "ScrollRight";
+    EventMode[EventMode["SwipeUp"] = 6] = "SwipeUp";
+    EventMode[EventMode["SwipeDown"] = 7] = "SwipeDown";
+    EventMode[EventMode["SwipeLeft"] = 8] = "SwipeLeft";
+    EventMode[EventMode["SwipeRight"] = 9] = "SwipeRight";
+    EventMode[EventMode["PressShort"] = 10] = "PressShort";
+    EventMode[EventMode["PressLong"] = 11] = "PressLong";
+})(EventMode || (EventMode = {}));
 export class DeskThing {
     /**
      * Initializes the DeskThing instance and sets up event listeners.
@@ -31,29 +46,7 @@ export class DeskThing {
     constructor() {
         this.listeners = {};
         this.initialize();
-        const eventsToForward = ['wheel', 'keydown', 'keyup'];
-        const forwardEvent = (event) => {
-            if (event instanceof KeyboardEvent) {
-                const key = event.code;
-                this.sendMessageToParent({ app: 'client', type: 'button', payload: { button: key, flavor: 'Short' } });
-            }
-            else if (event instanceof WheelEvent) {
-                let flavor = 'Up';
-                if (event.deltaY > 0)
-                    flavor = 'Down';
-                else if (event.deltaY < 0)
-                    flavor = 'Up';
-                else if (event.deltaX > 0)
-                    flavor = 'Right';
-                else if (event.deltaX < 0)
-                    flavor = 'Left';
-                this.sendMessageToParent({ app: 'client', type: 'button', payload: { button: 'Scroll', flavor } });
-            }
-        };
-        const options = { capture: true, passive: true, throttled: 16 };
-        eventsToForward.forEach(eventType => {
-            document.addEventListener(eventType, forwardEvent, options);
-        });
+        this.initializeListeners();
     }
     /**
      * Initializes the message event listener.
@@ -61,6 +54,50 @@ export class DeskThing {
      */
     initialize() {
         window.addEventListener('message', this.handleMessage.bind(this));
+    }
+    /**
+     * Sets up the listeners and bubbles them to the server
+     * @private
+     */
+    initializeListeners() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const eventsToForward = ['wheel', 'keydown', 'keyup'];
+            const forwardEvent = (event) => {
+                // Check if event was prevented elsewhere
+                if (event.defaultPrevented) {
+                    return;
+                }
+                // Check if it is a keyboard event and handle those differently
+                if (event instanceof KeyboardEvent) {
+                    // Get the code for the key that was pressed
+                    const key = event.code;
+                    // 'bubble' the event to the server. 'flavor' is depreciated but used for backwards-compatibility. Will be removed in a future update.
+                    const mode = event.type === 'keydown' ? 'KeyDown' : 'KeyUp';
+                    const flavor = event.type === 'keydown' ? 'Down' : 'Up';
+                    this.send({ app: 'client', type: 'button', payload: { button: key, mode, flavor } });
+                    this.send({ app: 'client', type: 'button', payload: { button: key, mode, flavor } });
+                    // There should be logic for long presses, but those are not supported yet!
+                }
+                else if (event instanceof WheelEvent) {
+                    // Initialize the mode of the button press
+                    let mode = 'Up';
+                    if (event.deltaY > 0)
+                        mode = 'Down';
+                    else if (event.deltaY < 0)
+                        mode = 'Up';
+                    else if (event.deltaX > 0)
+                        mode = 'Right';
+                    else if (event.deltaX < 0)
+                        mode = 'Left';
+                    // Added "flavor" for backwards compatibility. It's not needed in later versions
+                    this.send({ app: 'client', type: 'button', payload: { button: 'Scroll', flavor: mode, mode } });
+                }
+            };
+            const options = { capture: true, passive: false };
+            eventsToForward.forEach(eventType => {
+                document.addEventListener(eventType, forwardEvent, options);
+            });
+        });
     }
     /**
      * Singleton pattern: Ensures only one instance of DeskThing exists.
@@ -91,10 +128,10 @@ export class DeskThing {
             this.listeners[event] = [];
         }
         if (event === 'apps' || event === 'message' || event === 'music' || event === 'settings') {
-            this.sendMessageToParent({ app: 'client', request: event, type: 'on' });
+            this.send({ app: 'client', request: event, type: 'on' });
             this.listeners[event].push(callback);
             return () => {
-                this.sendMessageToParent({ app: 'client', request: event, type: 'off' });
+                this.send({ app: 'client', request: event, type: 'off' });
                 this.off(event, callback);
             };
         }
@@ -154,7 +191,7 @@ export class DeskThing {
     /**
      * Sends a message to the parent window.
      * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
-     *
+     * @deprecated Use send() instead
      * @example
      * deskThing.sendMessageToParent({
      *   app: 'client',
@@ -163,6 +200,20 @@ export class DeskThing {
      * });
      */
     sendMessageToParent(data) {
+        this.send(data);
+    }
+    /**
+     * Sends a message to the parent window.
+     * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
+     *
+     * @example
+     * deskThing.send({
+     *   app: 'client',
+     *   type: 'action',
+     *   payload: { buttonClicked: 'submit' }
+     * });
+     */
+    send(data) {
         const payload = {
             app: data.app || undefined,
             type: data.type || undefined,
