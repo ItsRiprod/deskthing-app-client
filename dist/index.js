@@ -45,6 +45,198 @@ export class DeskThing {
      */
     constructor() {
         this.listeners = {};
+        /**
+       * Asynchronously waits for a response after sending a request to the client
+       * @param {string} type - The type to listen to
+       * @param {SocketData} requestData - The data to send that will be listened to
+       * @param {string?} request (optional) A specific request to listen for
+       * @returns {Promise<t | undefined>} - The retrieved data, or undefined if the request fails or times out after 5 seconds
+       *
+       * This will automatically return the payload of the response.
+       *
+       * @example
+       * // On the client
+       * const data = await deskThing.fetchData<UserProfile>('users', {
+       *   type: 'get',
+       *   request: 'profile',
+       *   payload: { userId: '123' }
+       * });
+       * console.log(data); // prints the user profile data
+       *
+       * // On the server
+       * DeskThing.on('get', (data) => {
+       *  if (data.request == 'profile') {
+       *    DeskThing.send({
+       *      type: 'users',
+       *      payload: users.getUserById(data.payload.userId)
+       *    })
+       *  }
+       * }
+       */
+        this.fetchData = (type, requestData, request) => __awaiter(this, void 0, void 0, function* () {
+            const timeout = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Music data request timed out')), 5000);
+            });
+            const dataPromise = new Promise((resolve) => {
+                this.once(type, (data) => {
+                    resolve(data.payload);
+                }, request);
+                this.send(requestData);
+            });
+            return Promise.race([dataPromise, timeout])
+                .catch(() => undefined);
+        });
+        /**
+         * Requests and waits for music data from the server
+         * @returns {Promise<SongData | undefined>} - The retrieved music data, or undefined if the request fails
+         *
+         * @example
+         * const musicData = await deskThing.getMusic();
+         * if (musicData) {
+         *   console.log('Current song:', musicData.song_title);
+         * }
+         */
+        this.getMusic = () => __awaiter(this, void 0, void 0, function* () {
+            return this.fetchData('music', {
+                app: 'client',
+                type: 'get',
+                request: 'music',
+                payload: {}
+            });
+        });
+        /**
+       * Requests and waits for application settings from the server
+       * @returns {Promise<AppSettings | undefined>} - The retrieved settings, or undefined if the request fails
+       *
+       * @example
+       * const settings = await deskThing.getSettings();
+       * if (settings) {
+       *   console.log('Theme:', settings.theme.value);
+       *   console.log('Language:', settings.language.value);
+       * }
+       */
+        this.getSettings = () => __awaiter(this, void 0, void 0, function* () {
+            return this.fetchData('settings', {
+                app: 'client',
+                type: 'get',
+                request: 'settings',
+                payload: {}
+            });
+        });
+        /**
+       * Requests and waits for the list of installed apps from the server
+       * @returns {Promise<App[] | undefined>} - The retrieved apps list, or undefined if the request fails
+       *
+       * @example
+       * const installedApps = await deskThing.getApps();
+       * if (installedApps) {
+       *   installedApps.forEach(app => {
+       *     console.log('App name:', app.name);
+       *   });
+       * }
+       */
+        this.getApps = () => __awaiter(this, void 0, void 0, function* () {
+            return this.fetchData('apps', {
+                app: 'client',
+                type: 'get',
+                request: 'apps',
+                payload: {}
+            });
+        });
+        /**
+         * Returns the URL for the action mapped to the key. Usually, the URL points to an SVG icon.
+         * @param key
+         * @returns {Promise<string | undefined>} - The URL for the action icon, or undefined if the request fails
+         */
+        this.getKeyIcon = (key) => __awaiter(this, void 0, void 0, function* () {
+            return this.fetchData(key.id, {
+                app: 'client',
+                type: 'get',
+                request: 'key',
+                payload: key
+            });
+        });
+        /**
+         * Returns the URL for the action . Usually, the URL points to an SVG icon.
+         * @param action
+         * @returns {Promise<string | undefined>} - The URL for the action icon, or undefined if the request fails
+         */
+        this.getActionIcon = (action) => __awaiter(this, void 0, void 0, function* () {
+            return this.fetchData(action.id, {
+                app: 'client',
+                type: 'get',
+                request: 'action',
+                payload: action
+            });
+        });
+        /**
+       * Triggers an action as if it were triggered by a button
+       * @param {ActionReference} action - The action to trigger
+       * @param {string} action.id - The ID of the action
+       * @param {string} [action.value] - Optional value for the action
+       * @param {string} [action.source] - Optional source of the action (defaults to current app)
+       *
+       * @example
+       * // Trigger a simple action
+       * deskThing.triggerAction({ id: 'do-something' });
+       *
+       * // Trigger an action with a value and custom source
+       * deskThing.triggerAction({
+       *   id: 'volup',
+       *   value: '15',
+       *   source: 'server'
+       * });
+       *
+       * @example
+       * // Trigger an action that modifies the client
+       * deskThing.triggerAction({
+       *   id: 'appslist',
+       *   value: 'show',
+       *   source: 'server'
+       * });
+       *
+       * @example
+       * // Trigger an action on your app
+       * deskThing.triggerAction({
+       *   id: 'service',
+       *   value: 'restart'
+       * });
+       *
+       * // Server-side code
+       * DeskThing.on('action', (action) => {
+       *   if (action.id === 'service') {
+       *     console.log(action.value); // prints restart
+       *   }
+       * });
+       */
+        this.triggerAction = (action) => __awaiter(this, void 0, void 0, function* () {
+            this.send({ app: 'client', type: 'action', payload: action });
+        });
+        /**
+       * Triggers the action tied to a specific key
+       * @param {KeyTrigger} keyTrigger - The key trigger configuration
+       * @param {string} keyTrigger.key - The key to trigger
+       * @param {EventMode} keyTrigger.mode - The event mode (e.g., 'keydown', 'keyup')
+       * @param {string} [keyTrigger.source] - Optional source of the key trigger (defaults to current app)
+       *
+       * @example
+       * // Trigger a keydown event
+       * deskThing.triggerKey({
+       *   key: 'Enter',
+       *   mode: EventMode.KeyDown,
+       *   source: 'server'
+       * });
+       *
+       * // Trigger a keyup event with custom source
+       * deskThing.triggerKey({
+       *   key: 'Escape',
+       *   mode: EventMode.PressLong,
+       *   source: 'server'
+       * });
+       */
+        this.triggerKey = (keyTrigger) => __awaiter(this, void 0, void 0, function* () {
+            this.send({ app: 'client', type: 'key', payload: keyTrigger });
+        });
         this.initialize();
         this.initializeListeners();
     }
@@ -71,26 +263,21 @@ export class DeskThing {
                 if (event instanceof KeyboardEvent) {
                     // Get the code for the key that was pressed
                     const key = event.code;
-                    // 'bubble' the event to the server. 'flavor' is depreciated but used for backwards-compatibility. Will be removed in a future update.
-                    const mode = event.type === 'keydown' ? 'KeyDown' : 'KeyUp';
-                    const flavor = event.type === 'keydown' ? 'Down' : 'Up';
-                    this.send({ app: 'client', type: 'button', payload: { button: key, mode, flavor } });
-                    this.send({ app: 'client', type: 'button', payload: { button: key, mode, flavor } });
-                    // There should be logic for long presses, but those are not supported yet!
+                    const mode = event.type === 'keydown' ? EventMode.KeyDown : EventMode.KeyUp;
+                    this.triggerKey({ key, mode });
                 }
                 else if (event instanceof WheelEvent) {
                     // Initialize the mode of the button press
-                    let mode = 'Up';
+                    let mode = EventMode.ScrollUp;
                     if (event.deltaY > 0)
-                        mode = 'Down';
+                        mode = EventMode.ScrollDown;
                     else if (event.deltaY < 0)
-                        mode = 'Up';
+                        mode = EventMode.ScrollUp;
                     else if (event.deltaX > 0)
-                        mode = 'Right';
+                        mode = EventMode.ScrollRight;
                     else if (event.deltaX < 0)
-                        mode = 'Left';
-                    // Added "flavor" for backwards compatibility. It's not needed in later versions
-                    this.send({ app: 'client', type: 'button', payload: { button: 'Scroll', flavor: mode, mode } });
+                        mode = EventMode.ScrollLeft;
+                    this.triggerKey({ key: 'Scroll', mode });
                 }
             };
             const options = { capture: true, passive: false };
@@ -114,41 +301,42 @@ export class DeskThing {
     }
     /**
      * Registers an event listener for a specific event type.
-     * @param {EventTypes} event - The type of event to listen for
+     * @param {string} type - The type of event to listen for
      * @param {EventCallback} callback - The function to call when the event occurs
      * @returns {Function} A function to remove the event listener
      *
      * @example
-     * const removeListener = deskThing.on('message', (data) => {
-     *   console.log('Received message:', data);
+     * const removeListener = deskThing.on('music', (data: SocketData) => {
+     *   console.log('Received music data:', data.payload);
      * });
+     *
+     * @example
+     * // Client-side code (here)
+     * const removeListener = deskThing.on('customdata', (data: SocketData) => {
+     *   console.log('Received custom data:', data.payload);
+     * });
+     *
+     * // Server-side code
+     * DeskThing.send({ type: 'customdata', payload: 'Hello from the server!' });
      */
-    on(event, callback) {
-        if (!this.listeners[event]) {
-            this.listeners[event] = [];
+    on(type, callback) {
+        if (!this.listeners[type]) {
+            this.listeners[type] = [];
         }
-        if (event === 'apps' || event === 'message' || event === 'music' || event === 'settings') {
-            this.send({ app: 'client', request: event, type: 'on' });
-            this.listeners[event].push(callback);
-            return () => {
-                this.send({ app: 'client', request: event, type: 'off' });
-                this.off(event, callback);
-            };
-        }
-        this.listeners[event].push(callback);
-        return () => this.off(event, callback);
+        this.listeners[type].push(callback);
+        return () => this.off(type, callback);
     }
     /**
      * Removes an event listener for a specific event type.
-     * @param {EventTypes} event - The type of event to remove the listener from
+     * @param {string} type - The type of event to remove the listener from
      * @param {EventCallback} callback - The function to remove from the listeners
      *
      * @example
      * deskThing.off('message', messageCallback);
      */
-    off(event, callback) {
-        if (this.listeners[event]) {
-            this.listeners[event] = this.listeners[event].filter(listener => listener !== callback);
+    off(type, callback) {
+        if (this.listeners[type]) {
+            this.listeners[type] = this.listeners[type].filter(listener => listener !== callback);
         }
     }
     /**
@@ -161,32 +349,55 @@ export class DeskThing {
         if (event.data.source !== 'deskthing')
             return;
         const socketData = event.data;
-        if (socketData.app === 'client') {
-            if (!socketData.type)
-                return;
-            const callbacks = this.listeners[socketData.type];
-            if (callbacks) {
-                callbacks.forEach(callback => callback(socketData.payload));
-            }
-        }
-        else {
-            this.emit(socketData.app, socketData);
-        }
+        this.emit(socketData.type, socketData);
     }
     /**
      * Emits an event to all registered listeners for that event type.
-     * @param {AppTypes | EventTypes} event - The type of event to emit
+     * @param {string} type - The type of event to emit
      * @param {SocketData} data - The data to pass to the event listeners
      * @returns {Promise<void>}
      * @private
      */
-    emit(event, data) {
+    emit(type, data) {
         return __awaiter(this, void 0, void 0, function* () {
-            const callbacks = this.listeners[event];
+            const callbacks = this.listeners[type];
             if (callbacks) {
                 callbacks.forEach(callback => callback(data));
             }
         });
+    }
+    /**
+   * Listens for a single occurrence of an event, then removes the listener
+   * @param {string} type - The event type to listen for
+   * @param {EventCallback} callback - The function to call when the event occurs
+   * @returns {Function} - Function to manually remove the listener
+   *
+   * @example
+   * deskThing.once('music', (data) => {
+   *   console.log('Received music data:', data.payload);
+   * });
+   *
+   * @example
+   * // Client-side code (here)
+   * deskThing.once('data', (data) => {
+   *   console.log('Received specific request:', data.payload); // prints Payload 3 once
+   * }, 'specificRequest');
+   *
+   *  // Server-side code
+   * DeskThing.send({ type: 'data', payload: 'Payload 1', request: 'someRequest' }); // Wont send
+   * DeskThing.send({ type: 'data', payload: 'Payload 2', request: 'randomRequest' }); // Wont send
+   * DeskThing.send({ type: 'data', payload: 'Payload 3', request: 'specificRequest' }); // Will send
+   * DeskThing.send({ type: 'data', payload: 'Payload 4', request: 'faultyRequest' }); // Wont send
+   * DeskThing.send({ type: 'data', payload: 'Payload 5', request: 'specificRequest' }); // Wont send
+   */
+    once(type, callback, request) {
+        const removeListener = this.on(type, (data) => {
+            if (request && data.request !== request)
+                return;
+            callback(data);
+            removeListener();
+        });
+        return removeListener;
     }
     /**
      * Sends a message to the parent window.

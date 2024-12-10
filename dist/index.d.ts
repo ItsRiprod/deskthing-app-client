@@ -1,11 +1,9 @@
 export interface SocketData {
     app?: string;
-    type?: string;
+    type: string;
     request?: string;
     payload?: any;
 }
-export type AppTypes = 'client' | 'server' | string;
-export type EventTypes = 'get' | 'set' | 'message' | 'log' | 'error' | 'data' | 'apps' | 'message' | 'music' | 'settings' | string;
 export type SongData = {
     album: string | null;
     artist: string | null;
@@ -27,7 +25,18 @@ export type SongData = {
     device: string | null;
     id: string | null;
     device_id: string | null;
+    color?: color;
 };
+interface color {
+    value: number[];
+    rgb: string;
+    rgba: string;
+    hex: string;
+    hexa: string;
+    isDark: boolean;
+    isLight: boolean;
+    error?: string;
+}
 export declare enum AUDIO_REQUESTS {
     NEXT = "next",
     PREVIOUS = "previous",
@@ -105,6 +114,17 @@ export type SettingOption = {
     label: string;
     value: string;
 };
+export interface SettingsList {
+    value: string[];
+    placeholder?: string;
+    maxValues?: number;
+    orderable?: boolean;
+    unique?: boolean;
+    type: 'list';
+    label: string;
+    description?: string;
+    options: SettingOption[];
+}
 export interface SettingsRanked {
     value: string[];
     type: 'ranked';
@@ -120,7 +140,14 @@ export interface SettingsMultiSelect {
     placeholder?: string;
     options: SettingOption[];
 }
-export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect | SettingsRange | SettingsRanked;
+export interface SettingsColor {
+    type: 'color';
+    value: string;
+    label: string;
+    description?: string;
+    placeholder?: string;
+}
+export type SettingsType = SettingsNumber | SettingsBoolean | SettingsString | SettingsSelect | SettingsMultiSelect | SettingsRange | SettingsRanked | SettingsList | SettingsColor;
 export interface AppSettings {
     [key: string]: SettingsType;
 }
@@ -150,7 +177,27 @@ export type Action = {
     version: string;
     enabled: boolean;
 };
-type EventCallback = (data: any) => void;
+export type ActionReference = {
+    id: string;
+    value?: string;
+    enabled?: boolean;
+    source?: string;
+};
+export type Key = {
+    id: string;
+    source?: string;
+    description?: string;
+    version?: string;
+    enabled?: boolean;
+    version_code?: number;
+    modes: EventMode[];
+};
+export interface KeyTrigger {
+    key: string;
+    mode: EventMode;
+    source?: string;
+}
+type EventCallback = (data: SocketData) => void;
 export declare class DeskThing {
     private static instance;
     private listeners;
@@ -180,25 +227,34 @@ export declare class DeskThing {
     static getInstance(): DeskThing;
     /**
      * Registers an event listener for a specific event type.
-     * @param {EventTypes} event - The type of event to listen for
+     * @param {string} type - The type of event to listen for
      * @param {EventCallback} callback - The function to call when the event occurs
      * @returns {Function} A function to remove the event listener
      *
      * @example
-     * const removeListener = deskThing.on('message', (data) => {
-     *   console.log('Received message:', data);
+     * const removeListener = deskThing.on('music', (data: SocketData) => {
+     *   console.log('Received music data:', data.payload);
      * });
+     *
+     * @example
+     * // Client-side code (here)
+     * const removeListener = deskThing.on('customdata', (data: SocketData) => {
+     *   console.log('Received custom data:', data.payload);
+     * });
+     *
+     * // Server-side code
+     * DeskThing.send({ type: 'customdata', payload: 'Hello from the server!' });
      */
-    on(event: EventTypes, callback: EventCallback): () => void;
+    on(type: string, callback: EventCallback): () => void;
     /**
      * Removes an event listener for a specific event type.
-     * @param {EventTypes} event - The type of event to remove the listener from
+     * @param {string} type - The type of event to remove the listener from
      * @param {EventCallback} callback - The function to remove from the listeners
      *
      * @example
      * deskThing.off('message', messageCallback);
      */
-    off(event: EventTypes, callback: EventCallback): void;
+    off(type: string, callback: EventCallback): void;
     /**
      * Handles incoming messages from the parent window.
      * @param {MessageEvent} event - The message event received
@@ -207,12 +263,178 @@ export declare class DeskThing {
     private handleMessage;
     /**
      * Emits an event to all registered listeners for that event type.
-     * @param {AppTypes | EventTypes} event - The type of event to emit
+     * @param {string} type - The type of event to emit
      * @param {SocketData} data - The data to pass to the event listeners
      * @returns {Promise<void>}
      * @private
      */
     private emit;
+    /**
+   * Listens for a single occurrence of an event, then removes the listener
+   * @param {string} type - The event type to listen for
+   * @param {EventCallback} callback - The function to call when the event occurs
+   * @returns {Function} - Function to manually remove the listener
+   *
+   * @example
+   * deskThing.once('music', (data) => {
+   *   console.log('Received music data:', data.payload);
+   * });
+   *
+   * @example
+   * // Client-side code (here)
+   * deskThing.once('data', (data) => {
+   *   console.log('Received specific request:', data.payload); // prints Payload 3 once
+   * }, 'specificRequest');
+   *
+   *  // Server-side code
+   * DeskThing.send({ type: 'data', payload: 'Payload 1', request: 'someRequest' }); // Wont send
+   * DeskThing.send({ type: 'data', payload: 'Payload 2', request: 'randomRequest' }); // Wont send
+   * DeskThing.send({ type: 'data', payload: 'Payload 3', request: 'specificRequest' }); // Will send
+   * DeskThing.send({ type: 'data', payload: 'Payload 4', request: 'faultyRequest' }); // Wont send
+   * DeskThing.send({ type: 'data', payload: 'Payload 5', request: 'specificRequest' }); // Wont send
+   */
+    once(type: string, callback: EventCallback, request?: string): () => void;
+    /**
+   * Asynchronously waits for a response after sending a request to the client
+   * @param {string} type - The type to listen to
+   * @param {SocketData} requestData - The data to send that will be listened to
+   * @param {string?} request (optional) A specific request to listen for
+   * @returns {Promise<t | undefined>} - The retrieved data, or undefined if the request fails or times out after 5 seconds
+   *
+   * This will automatically return the payload of the response.
+   *
+   * @example
+   * // On the client
+   * const data = await deskThing.fetchData<UserProfile>('users', {
+   *   type: 'get',
+   *   request: 'profile',
+   *   payload: { userId: '123' }
+   * });
+   * console.log(data); // prints the user profile data
+   *
+   * // On the server
+   * DeskThing.on('get', (data) => {
+   *  if (data.request == 'profile') {
+   *    DeskThing.send({
+   *      type: 'users',
+   *      payload: users.getUserById(data.payload.userId)
+   *    })
+   *  }
+   * }
+   */
+    fetchData: <t>(type: string, requestData: SocketData, request?: string) => Promise<t | undefined>;
+    /**
+     * Requests and waits for music data from the server
+     * @returns {Promise<SongData | undefined>} - The retrieved music data, or undefined if the request fails
+     *
+     * @example
+     * const musicData = await deskThing.getMusic();
+     * if (musicData) {
+     *   console.log('Current song:', musicData.song_title);
+     * }
+     */
+    getMusic: () => Promise<SongData | undefined>;
+    /**
+   * Requests and waits for application settings from the server
+   * @returns {Promise<AppSettings | undefined>} - The retrieved settings, or undefined if the request fails
+   *
+   * @example
+   * const settings = await deskThing.getSettings();
+   * if (settings) {
+   *   console.log('Theme:', settings.theme.value);
+   *   console.log('Language:', settings.language.value);
+   * }
+   */
+    getSettings: () => Promise<AppSettings | undefined>;
+    /**
+   * Requests and waits for the list of installed apps from the server
+   * @returns {Promise<App[] | undefined>} - The retrieved apps list, or undefined if the request fails
+   *
+   * @example
+   * const installedApps = await deskThing.getApps();
+   * if (installedApps) {
+   *   installedApps.forEach(app => {
+   *     console.log('App name:', app.name);
+   *   });
+   * }
+   */
+    getApps: () => Promise<App[] | undefined>;
+    /**
+     * Returns the URL for the action mapped to the key. Usually, the URL points to an SVG icon.
+     * @param key
+     * @returns {Promise<string | undefined>} - The URL for the action icon, or undefined if the request fails
+     */
+    getKeyIcon: (key: Key) => Promise<string | undefined>;
+    /**
+     * Returns the URL for the action . Usually, the URL points to an SVG icon.
+     * @param action
+     * @returns {Promise<string | undefined>} - The URL for the action icon, or undefined if the request fails
+     */
+    getActionIcon: (action: Action) => Promise<string | undefined>;
+    /**
+   * Triggers an action as if it were triggered by a button
+   * @param {ActionReference} action - The action to trigger
+   * @param {string} action.id - The ID of the action
+   * @param {string} [action.value] - Optional value for the action
+   * @param {string} [action.source] - Optional source of the action (defaults to current app)
+   *
+   * @example
+   * // Trigger a simple action
+   * deskThing.triggerAction({ id: 'do-something' });
+   *
+   * // Trigger an action with a value and custom source
+   * deskThing.triggerAction({
+   *   id: 'volup',
+   *   value: '15',
+   *   source: 'server'
+   * });
+   *
+   * @example
+   * // Trigger an action that modifies the client
+   * deskThing.triggerAction({
+   *   id: 'appslist',
+   *   value: 'show',
+   *   source: 'server'
+   * });
+   *
+   * @example
+   * // Trigger an action on your app
+   * deskThing.triggerAction({
+   *   id: 'service',
+   *   value: 'restart'
+   * });
+   *
+   * // Server-side code
+   * DeskThing.on('action', (action) => {
+   *   if (action.id === 'service') {
+   *     console.log(action.value); // prints restart
+   *   }
+   * });
+   */
+    triggerAction: (action: ActionReference) => Promise<void>;
+    /**
+   * Triggers the action tied to a specific key
+   * @param {KeyTrigger} keyTrigger - The key trigger configuration
+   * @param {string} keyTrigger.key - The key to trigger
+   * @param {EventMode} keyTrigger.mode - The event mode (e.g., 'keydown', 'keyup')
+   * @param {string} [keyTrigger.source] - Optional source of the key trigger (defaults to current app)
+   *
+   * @example
+   * // Trigger a keydown event
+   * deskThing.triggerKey({
+   *   key: 'Enter',
+   *   mode: EventMode.KeyDown,
+   *   source: 'server'
+   * });
+   *
+   * // Trigger a keyup event with custom source
+   * deskThing.triggerKey({
+   *   key: 'Escape',
+   *   mode: EventMode.PressLong,
+   *   source: 'server'
+   * });
+   */
+    triggerKey: (keyTrigger: KeyTrigger) => Promise<void>;
     /**
      * Sends a message to the parent window.
      * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
