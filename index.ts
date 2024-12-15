@@ -1,9 +1,73 @@
+import { format } from "path";
 
 export interface SocketData {
     app?: string;
     type: string;
     request?: string;
     payload?: any // I know this is bad and that you shouldn't use "any", but I'm not sure what else to do as this can literally be anything
+  }
+
+  export interface ClientManifest {
+    name: string
+    id: string
+    short_name: string
+    description: string
+    builtFor: string
+    reactive: boolean
+    author: string
+    version: string
+    version_code: number
+    compatible_server: number[]
+    port: number
+    ip: string
+    device_type: { id: number; name: string }
+  }
+
+  export interface ClientPreferences {
+    miniplayer?: MiniplayerSettings
+    appTrayState: ViewMode
+    volume: VolMode
+    theme?: Theme
+    currentView?: App
+    ShowNotifications: boolean
+    Screensaver: App
+    ScreensaverType: ScreensaverSettings
+    onboarding: boolean
+    showPullTabs: boolean
+    saveLocation: boolean
+    use24hour: boolean
+  }
+
+  export interface ScreensaverSettings {
+    version: number
+    type: 'black' | 'logo' | 'clock'
+  }
+
+  export interface MiniplayerSettings {
+    state: ViewMode,
+    visible: boolean
+    position: 'bottom' | 'left' | 'right'
+  }
+
+  export interface Theme {
+    primary: string
+    textLight: string
+    textDark: string
+    icons: string
+    background: string
+    scale: 'small' | 'medium' | 'large'
+
+  }
+
+  export enum VolMode {
+    WHEEL = 'wheel',
+    SLIDER = 'slider',
+    BAR = 'bar'
+  } 
+  export enum ViewMode {
+    HIDDEN = 'hidden', 
+    PEEK = 'peek', 
+    FULL = 'full' 
   }
 
 export type SongData = {
@@ -234,8 +298,9 @@ export interface App {
 
 type EventCallback = (data: SocketData) => void;
 
-export class DeskThing {
-    private static instance: DeskThing
+export class DeskThingClass {
+    private static instance: DeskThingClass
+    private manifest: ClientManifest | undefined;
     private listeners: { [key in string]?: EventCallback[] } = {};
 
     /**
@@ -292,18 +357,32 @@ export class DeskThing {
           eventsToForward.forEach(eventType => {
               document.addEventListener(eventType, forwardEvent, options);
           });
+
+          const fetchManifest = async () => {
+            this.manifest = await this.fetchData<ClientManifest>('manifest', { type: 'get', payload: 'manifest', app: 'client'})
+          }
+          const handleManifest = async (socketData: SocketData) => {
+            if (socketData.type == 'manifest' && socketData.payload) {
+              this.manifest = socketData.payload as ClientManifest;
+            }
+          }
+
+          fetchManifest();
+          
+          this.on('manifest', handleManifest);
+
     }
 
     /**
      * Singleton pattern: Ensures only one instance of DeskThing exists.
-     * @returns {DeskThing} The single instance of DeskThing
+     * @returns {DeskThingClass} The single instance of DeskThing
      * 
      * @example
      * const deskThing = DeskThing.getInstance();
      */
-    static getInstance(): DeskThing {
+    static getInstance(): DeskThingClass {
         if (!this.instance) {
-            this.instance = new DeskThing()
+            this.instance = new DeskThingClass()
         }
         return this.instance
     }
@@ -466,12 +545,18 @@ export class DeskThing {
      * }
      */
       public getMusic = async (): Promise<SongData | undefined> => {
-        return this.fetchData('music', {
+        const musicData = await this.fetchData<SongData>('music', {
           app: 'client',
           type: 'get',
           request: 'music',
           payload: {}
         })
+
+        if (musicData && musicData.thumbnail) {
+          musicData.thumbnail = this.formatImageUrl(musicData.thumbnail)
+        }
+
+        return musicData 
       };
     
       /**
@@ -612,6 +697,64 @@ export class DeskThing {
         this.send({ app: 'client', type: 'key', payload: keyTrigger});
       }
 
+      /**
+       * Returns the manifest of the current app
+       * @returns {Promise<Manifest | undefined>} The manifest of the current app, or undefined if the request fails
+       */
+      public getManifest = async (): Promise<ClientManifest | undefined> => {
+        if (this.manifest) {
+          return this.manifest
+        }
+        
+        return this.fetchData('manifest', {
+          app: 'client',
+          type: 'get',
+          request: 'manifest',
+          payload: {}
+        })
+      }
+
+      /**
+       * Formats an image URL to make the returned string a usable src for an image
+       * @param image - A legacy-acceptable image url that can be either base64 OR a url
+       * @returns - a usable URL
+       * 
+       * @example
+       * //server
+       * DeskThing.on('getImage', (socketData: SocketData) => {
+       *    const imageUrl = await DeskThing.saveImageReferenceFromURL('https://host.com/some/image/url.png')
+       *    DeskThing.send({ type: 'image', payload: imageUrl || '' })
+       * })
+       * 
+       * // client
+       * const imageUrl = await DeskThing.fetchData<string>('image', { type: 'getImage' })
+       * const formattedImage = DeskThing.formatImageUrl(imageUrl)
+       * return <img src={formattedImage} alt="Image" />
+       * @example
+       * //server
+       * const imageUrl = await DeskThing.saveImageReferenceFromURL(settings.image.value)
+       * DeskThing.send({ type: 'image', payload: imageUrl || '' })
+       * 
+       * // client
+       * const [image, setImage] = useState<string>('')
+       * const imageUrl = await DeskThing.on('image', (imageUrl) => {
+       *   const formattedImage = DeskThing.formatImageUrl(imageUrl)
+       *   setImage(formattedImage)
+       * })
+       * return <img src={image} alt="Image" />
+       */
+      public formatImageUrl = (image: string): string => {
+        if (!this.manifest) {
+          return image
+        }
+
+        if (image.startsWith('data:image')) {
+          return image
+        }
+
+        return image.replace('localhost:8891', `${this.manifest.ip}:${this.manifest.port}`)
+      }
+
     /**
      * Sends a message to the parent window.
      * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
@@ -652,4 +795,4 @@ export class DeskThing {
 }
 
 
-export default DeskThing.getInstance();
+export const DeskThing = DeskThingClass.getInstance();

@@ -7,6 +7,18 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+export var VolMode;
+(function (VolMode) {
+    VolMode["WHEEL"] = "wheel";
+    VolMode["SLIDER"] = "slider";
+    VolMode["BAR"] = "bar";
+})(VolMode || (VolMode = {}));
+export var ViewMode;
+(function (ViewMode) {
+    ViewMode["HIDDEN"] = "hidden";
+    ViewMode["PEEK"] = "peek";
+    ViewMode["FULL"] = "full";
+})(ViewMode || (ViewMode = {}));
 export var AUDIO_REQUESTS;
 (function (AUDIO_REQUESTS) {
     AUDIO_REQUESTS["NEXT"] = "next";
@@ -37,7 +49,7 @@ export var EventMode;
     EventMode[EventMode["PressShort"] = 10] = "PressShort";
     EventMode[EventMode["PressLong"] = 11] = "PressLong";
 })(EventMode || (EventMode = {}));
-export class DeskThing {
+export class DeskThingClass {
     /**
      * Initializes the DeskThing instance and sets up event listeners.
      * Sends a message to the parent indicating that the client has started.
@@ -97,12 +109,16 @@ export class DeskThing {
          * }
          */
         this.getMusic = () => __awaiter(this, void 0, void 0, function* () {
-            return this.fetchData('music', {
+            const musicData = yield this.fetchData('music', {
                 app: 'client',
                 type: 'get',
                 request: 'music',
                 payload: {}
             });
+            if (musicData && musicData.thumbnail) {
+                musicData.thumbnail = this.formatImageUrl(musicData.thumbnail);
+            }
+            return musicData;
         });
         /**
        * Requests and waits for application settings from the server
@@ -237,6 +253,59 @@ export class DeskThing {
         this.triggerKey = (keyTrigger) => __awaiter(this, void 0, void 0, function* () {
             this.send({ app: 'client', type: 'key', payload: keyTrigger });
         });
+        /**
+         * Returns the manifest of the current app
+         * @returns {Promise<Manifest | undefined>} The manifest of the current app, or undefined if the request fails
+         */
+        this.getManifest = () => __awaiter(this, void 0, void 0, function* () {
+            if (this.manifest) {
+                return this.manifest;
+            }
+            return this.fetchData('manifest', {
+                app: 'client',
+                type: 'get',
+                request: 'manifest',
+                payload: {}
+            });
+        });
+        /**
+         * Formats an image URL to make the returned string a usable src for an image
+         * @param image - A legacy-acceptable image url that can be either base64 OR a url
+         * @returns - a usable URL
+         *
+         * @example
+         * //server
+         * DeskThing.on('getImage', (socketData: SocketData) => {
+         *    const imageUrl = await DeskThing.saveImageReferenceFromURL('https://host.com/some/image/url.png')
+         *    DeskThing.send({ type: 'image', payload: imageUrl || '' })
+         * })
+         *
+         * // client
+         * const imageUrl = await DeskThing.fetchData<string>('image', { type: 'getImage' })
+         * const formattedImage = DeskThing.formatImageUrl(imageUrl)
+         * return <img src={formattedImage} alt="Image" />
+         * @example
+         * //server
+         * const imageUrl = await DeskThing.saveImageReferenceFromURL(settings.image.value)
+         * DeskThing.send({ type: 'image', payload: imageUrl || '' })
+         *
+         * // client
+         * const [image, setImage] = useState<string>('')
+         * const imageUrl = await DeskThing.on('image', (imageUrl) => {
+         *   const formattedImage = DeskThing.formatImageUrl(imageUrl)
+         *   setImage(formattedImage)
+         * })
+         * return <img src={image} alt="Image" />
+         */
+        this.formatImageUrl = (image) => {
+            if (!this.manifest) {
+                return image;
+            }
+            if (image.startsWith('data:image')) {
+                return image;
+            }
+            return image.replace('localhost:8891', `${this.manifest.ip}:${this.manifest.port}`);
+        };
         this.initialize();
         this.initializeListeners();
     }
@@ -284,18 +353,28 @@ export class DeskThing {
             eventsToForward.forEach(eventType => {
                 document.addEventListener(eventType, forwardEvent, options);
             });
+            const fetchManifest = () => __awaiter(this, void 0, void 0, function* () {
+                this.manifest = yield this.fetchData('manifest', { type: 'get', payload: 'manifest', app: 'client' });
+            });
+            const handleManifest = (socketData) => __awaiter(this, void 0, void 0, function* () {
+                if (socketData.type == 'manifest' && socketData.payload) {
+                    this.manifest = socketData.payload;
+                }
+            });
+            fetchManifest();
+            this.on('manifest', handleManifest);
         });
     }
     /**
      * Singleton pattern: Ensures only one instance of DeskThing exists.
-     * @returns {DeskThing} The single instance of DeskThing
+     * @returns {DeskThingClass} The single instance of DeskThing
      *
      * @example
      * const deskThing = DeskThing.getInstance();
      */
     static getInstance() {
         if (!this.instance) {
-            this.instance = new DeskThing();
+            this.instance = new DeskThingClass();
         }
         return this.instance;
     }
@@ -434,4 +513,4 @@ export class DeskThing {
         window.parent.postMessage({ type: 'IFRAME_ACTION', payload: payload }, '*');
     }
 }
-export default DeskThing.getInstance();
+export const DeskThing = DeskThingClass.getInstance();

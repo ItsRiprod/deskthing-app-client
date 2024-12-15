@@ -4,6 +4,65 @@ export interface SocketData {
     request?: string;
     payload?: any;
 }
+export interface ClientManifest {
+    name: string;
+    id: string;
+    short_name: string;
+    description: string;
+    builtFor: string;
+    reactive: boolean;
+    author: string;
+    version: string;
+    version_code: number;
+    compatible_server: number[];
+    port: number;
+    ip: string;
+    device_type: {
+        id: number;
+        name: string;
+    };
+}
+export interface ClientPreferences {
+    miniplayer?: MiniplayerSettings;
+    appTrayState: ViewMode;
+    volume: VolMode;
+    theme?: Theme;
+    currentView?: App;
+    ShowNotifications: boolean;
+    Screensaver: App;
+    ScreensaverType: ScreensaverSettings;
+    onboarding: boolean;
+    showPullTabs: boolean;
+    saveLocation: boolean;
+    use24hour: boolean;
+}
+export interface ScreensaverSettings {
+    version: number;
+    type: 'black' | 'logo' | 'clock';
+}
+export interface MiniplayerSettings {
+    state: ViewMode;
+    visible: boolean;
+    position: 'bottom' | 'left' | 'right';
+}
+export interface Theme {
+    primary: string;
+    textLight: string;
+    textDark: string;
+    icons: string;
+    background: string;
+    scale: 'small' | 'medium' | 'large';
+}
+export declare enum VolMode {
+    WHEEL = "wheel",
+    SLIDER = "slider",
+    BAR = "bar"
+}
+export declare enum ViewMode {
+    HIDDEN = "hidden",
+    PEEK = "peek",
+    FULL = "full"
+}
 export type SongData = {
     album: string | null;
     artist: string | null;
@@ -198,8 +257,9 @@ export interface KeyTrigger {
     source?: string;
 }
 type EventCallback = (data: SocketData) => void;
-export declare class DeskThing {
+export declare class DeskThingClass {
     private static instance;
+    private manifest;
     private listeners;
     /**
      * Initializes the DeskThing instance and sets up event listeners.
@@ -219,12 +279,12 @@ export declare class DeskThing {
     private initializeListeners;
     /**
      * Singleton pattern: Ensures only one instance of DeskThing exists.
-     * @returns {DeskThing} The single instance of DeskThing
+     * @returns {DeskThingClass} The single instance of DeskThing
      *
      * @example
      * const deskThing = DeskThing.getInstance();
      */
-    static getInstance(): DeskThing;
+    static getInstance(): DeskThingClass;
     /**
      * Registers an event listener for a specific event type.
      * @param {string} type - The type of event to listen for
@@ -436,6 +496,41 @@ export declare class DeskThing {
    */
     triggerKey: (keyTrigger: KeyTrigger) => Promise<void>;
     /**
+     * Returns the manifest of the current app
+     * @returns {Promise<Manifest | undefined>} The manifest of the current app, or undefined if the request fails
+     */
+    getManifest: () => Promise<ClientManifest | undefined>;
+    /**
+     * Formats an image URL to make the returned string a usable src for an image
+     * @param image - A legacy-acceptable image url that can be either base64 OR a url
+     * @returns - a usable URL
+     *
+     * @example
+     * //server
+     * DeskThing.on('getImage', (socketData: SocketData) => {
+     *    const imageUrl = await DeskThing.saveImageReferenceFromURL('https://host.com/some/image/url.png')
+     *    DeskThing.send({ type: 'image', payload: imageUrl || '' })
+     * })
+     *
+     * // client
+     * const imageUrl = await DeskThing.fetchData<string>('image', { type: 'getImage' })
+     * const formattedImage = DeskThing.formatImageUrl(imageUrl)
+     * return <img src={formattedImage} alt="Image" />
+     * @example
+     * //server
+     * const imageUrl = await DeskThing.saveImageReferenceFromURL(settings.image.value)
+     * DeskThing.send({ type: 'image', payload: imageUrl || '' })
+     *
+     * // client
+     * const [image, setImage] = useState<string>('')
+     * const imageUrl = await DeskThing.on('image', (imageUrl) => {
+     *   const formattedImage = DeskThing.formatImageUrl(imageUrl)
+     *   setImage(formattedImage)
+     * })
+     * return <img src={image} alt="Image" />
+     */
+    formatImageUrl: (image: string) => string;
+    /**
      * Sends a message to the parent window.
      * @param {SocketData} data - The data to send to the parent. "app" defaults to the current app
      * @deprecated Use send() instead
@@ -460,5 +555,5 @@ export declare class DeskThing {
      */
     send(data: SocketData): void;
 }
-declare const _default: DeskThing;
-export default _default;
+export declare const DeskThing: DeskThingClass;
+export {};
