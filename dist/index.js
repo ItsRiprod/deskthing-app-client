@@ -354,7 +354,7 @@ export class DeskThingClass {
                 document.addEventListener(eventType, forwardEvent, options);
             });
             const fetchManifest = () => __awaiter(this, void 0, void 0, function* () {
-                this.manifest = yield this.fetchData('manifest', { type: 'get', payload: 'manifest', app: 'client' });
+                this.manifest = yield this.fetchData('manifest', { type: 'get', request: 'manifest', app: 'client' });
             });
             const handleManifest = (socketData) => __awaiter(this, void 0, void 0, function* () {
                 if (socketData.type == 'manifest' && socketData.payload) {

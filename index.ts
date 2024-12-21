@@ -359,7 +359,7 @@ export class DeskThingClass {
           });
 
           const fetchManifest = async () => {
-            this.manifest = await this.fetchData<ClientManifest>('manifest', { type: 'get', payload: 'manifest', app: 'client'})
+            this.manifest = await this.fetchData<ClientManifest>('manifest', { type: 'get', request: 'manifest', app: 'client'})
           }
           const handleManifest = async (socketData: SocketData) => {
             if (socketData.type == 'manifest' && socketData.payload) {
