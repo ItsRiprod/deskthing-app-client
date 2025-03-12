@@ -1,0 +1,1 @@
+export { DeskThing, DeskThingClass } from "./deskthing";
