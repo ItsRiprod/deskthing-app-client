@@ -5,20 +5,79 @@ import {
   AppSettings,
   ClientManifest,
   EventMode,
+  FromDeviceData,
+  DEVICE_CLIENT,
   Key,
-  KeyTrigger,
+  KeyReference,
   LOGGING_LEVELS,
   SocketData,
   SongData,
+  ClientToDeviceData,
+  CLIENT_REQUESTS,
+  TransitData,
+  DeviceToClientData,
+  ClientPlatformIDs,
 } from "@deskthing/types";
 
-type EventCallback = (data: SocketData) => void | Promise<void>;
+type BaseData = TransitData<string, string, unknown>;
 
-export class DeskThingClass {
-  private static instance: DeskThingClass;
+type ExtractClientType<D extends BaseData> = CLIENT_REQUESTS | D["type"];
+
+type ExtractClientRequest<D extends BaseData, T extends ExtractClientType<D>> =
+  | Extract<ClientToDeviceData, { type: T }>["request"]
+  | D["request"];
+
+type ExtractClientPayload<
+  D extends BaseData,
+  T extends ExtractClientType<D>,
+  R extends ExtractClientRequest<D, T> | undefined
+> = Extract<ClientToDeviceData, { type: T; request?: R }> extends never
+  ? T extends string
+    ? D
+    : Extract<D, { type: T; request?: R }>
+  : Extract<ClientToDeviceData, { type: T; request?: R }>;
+
+// DeskThing To App Type Helpers
+
+type ExtractDeviceType<D extends BaseData> = D["type"] | DEVICE_CLIENT;
+
+type ExtractDeviceRequest<
+  D extends BaseData,
+  T extends ExtractDeviceType<BaseData>
+> =
+  | Extract<DeviceToClientData, { type: T }>["request"]
+  | Extract<D, { type: T }>["request"];
+
+// Gets the payload type of data being returned from the server
+type ExtractDevicePayload<
+  B extends BaseData,
+  T extends ExtractDeviceType<B>,
+  R extends ExtractDeviceRequest<B, T> | undefined
+> = Extract<DeviceToClientData, { type: T; request?: R }> extends never
+  ? Extract<B, { type: T; request?: R }>
+  : Extract<DeviceToClientData, { type?: T; request?: R }>;
+
+type LinkListener<
+  D extends BaseData,
+  T extends ExtractDeviceType<D>,
+  R extends ExtractDeviceRequest<D, T>,
+  P extends undefined | never = never
+> = (payload: ExtractDevicePayload<D, T, R> | P) => void | Promise<void>;
+
+export class DeskThingClass<
+  ToClientData extends BaseData = SocketData,
+  ToAppData extends BaseData = SocketData
+> {
+  private static instance: DeskThingClass<any, any>;
   private manifest: ClientManifest | undefined;
-  private listeners: { [key in string]?: EventCallback[] } = {};
-  private onceListenerKeys: Set<string> = new Set()
+  private listeners: {
+    [key in ExtractDeviceType<ToClientData>]?: LinkListener<
+      ToClientData,
+      key,
+      string
+    >[];
+  } = {};
+  private onceListenerKeys: Set<string> = new Set();
 
   /**
    * Initializes the DeskThing instance and sets up event listeners.
@@ -59,7 +118,7 @@ export class DeskThingClass {
         const key = event.code;
         const mode =
           event.type === "keydown" ? EventMode.KeyDown : EventMode.KeyUp;
-        this.triggerKey({ key, mode });
+        this.triggerKey({ id: key, mode });
       } else if (event instanceof WheelEvent) {
         // Initialize the mode of the button press
         let mode = EventMode.ScrollUp;
@@ -68,7 +127,7 @@ export class DeskThingClass {
         else if (event.deltaY < 0) mode = EventMode.ScrollUp;
         else if (event.deltaX > 0) mode = EventMode.ScrollRight;
         else if (event.deltaX < 0) mode = EventMode.ScrollLeft;
-        this.triggerKey({ key: "Scroll", mode });
+        this.triggerKey({ id: "Scroll", mode });
       }
     };
     const options = {
@@ -82,20 +141,21 @@ export class DeskThingClass {
 
     const fetchManifest = async () => {
       this.manifest = await this.fetchData<ClientManifest>("manifest", {
-        type: "get",
+        type: CLIENT_REQUESTS.GET,
         request: "manifest",
         app: "client",
       });
     };
-    const handleManifest = async (socketData: SocketData) => {
-      if (socketData.type == "manifest" && socketData.payload) {
-        this.manifest = socketData.payload as ClientManifest;
+    const handleManifest = async (socketData: DeviceToClientData) => {
+      if (socketData.type == DEVICE_CLIENT.MANIFEST && socketData.payload) {
+        this.info('Received the manifest from the server')
+        this.manifest = socketData.payload
       }
     };
 
     fetchManifest();
 
-    this.on("manifest", handleManifest);
+    this.on(DEVICE_CLIENT.MANIFEST, handleManifest);
   }
 
   /**
@@ -106,11 +166,14 @@ export class DeskThingClass {
    * @example
    * const deskThing = DeskThing.getInstance();
    */
-  static getInstance(): DeskThingClass {
+  static getInstance<
+    T extends SocketData = SocketData,
+    S extends SocketData = SocketData
+  >(): DeskThingClass<T, S> {
     if (!this.instance) {
-      this.instance = new DeskThingClass();
+      this.instance = new DeskThingClass<T, S>();
     }
-    return this.instance;
+    return this.instance as DeskThingClass<T, S>;
   }
 
   /**
@@ -134,12 +197,15 @@ export class DeskThingClass {
    * // Server-side code
    * DeskThing.send({ type: 'customdata', payload: 'Hello from the server!' });
    */
-  on(type: string, callback: EventCallback): () => void {
+  on<E extends DEVICE_CLIENT | ToClientData["type"]>(
+    type: E,
+    callback: LinkListener<ToClientData, E, string>
+  ): () => void {
     if (!this.listeners[type]) {
       this.listeners[type] = [];
     }
 
-    this.listeners[type]!.push(callback);
+    this.listeners[type].push(callback);
     return () => this.off(type, callback);
   }
 
@@ -152,7 +218,10 @@ export class DeskThingClass {
    * @example
    * deskThing.off('message', messageCallback);
    */
-  off(type: string, callback: EventCallback) {
+  off<E extends DEVICE_CLIENT | ToClientData["type"]>(
+    type: E,
+    callback: LinkListener<ToClientData, E, string>
+  ) {
     if (this.listeners[type]) {
       this.listeners[type] = this.listeners[type]!.filter(
         (listener) => listener !== callback
@@ -169,7 +238,11 @@ export class DeskThingClass {
   private handleMessage(event: MessageEvent) {
     // Return if the message is not from the deskthing
     if (event.data.source !== "deskthing") return;
-    const socketData = event.data as SocketData;
+    const socketData = event.data as ExtractDevicePayload<
+      ToClientData,
+      string,
+      string
+    >;
 
     this.emit(socketData.type, socketData);
   }
@@ -182,14 +255,17 @@ export class DeskThingClass {
    * @private
    * @version 0.10.4
    */
-  private async emit(type: string, data: SocketData): Promise<void> {
+  private async emit<T extends ExtractDeviceType<ToClientData>>(
+    type: T,
+    data: ExtractDevicePayload<ToClientData, T, string>
+  ): Promise<void> {
     const callbacks = this.listeners[type];
     if (callbacks) {
       const promises = callbacks.map(async (callback) => {
         try {
           await callback(data);
         } catch (error) {
-          console.error('Error in event callback:', error);
+          console.error("Error in event callback:", error);
         }
       });
       // Doesn't await for all of the callbacks to finish being run
@@ -197,10 +273,12 @@ export class DeskThingClass {
     }
 
     // Cleanup any listener keys if there are any
-    const listenKey = `${type}-${data.request || 'undefined'}`
+    const listenKey = `${type}-${data.request || "undefined"}`;
     const res = this.onceListenerKeys.delete(listenKey);
     if (res) {
-      this.debug(`Removed callback key ${listenKey} because the callback was resolved`);
+      this.debug(
+        `Removed callback key ${listenKey} because the callback was resolved`
+      );
     }
   }
   /**
@@ -228,14 +306,19 @@ export class DeskThingClass {
    * DeskThing.send({ type: 'data', payload: 'Payload 4', request: 'faultyRequest' }); // Wont send
    * DeskThing.send({ type: 'data', payload: 'Payload 5', request: 'specificRequest' }); // Wont send
    */
-  public once(
-    type: string,
-    callback: EventCallback,
-    request?: string
+  public once<
+    T extends ExtractDeviceType<ToClientData>,
+    R extends ExtractDeviceRequest<ToClientData, T>
+  >(
+    type: T,
+    callback: (data: ExtractDevicePayload<ToClientData, T, R>) => void,
+    request?: R
   ): () => void {
     const removeListener = this.on(type, (data) => {
       if (request && data.request !== request) return;
-      callback(data);
+
+      // Typescript cant correctly infer that request is R and not string because string is anything
+      callback(data as unknown as ExtractDevicePayload<ToClientData, T, R>);
       removeListener();
     });
     return removeListener;
@@ -246,7 +329,7 @@ export class DeskThingClass {
    * @param {SocketData} requestData - The data to send to initiate the request
    * @param {SocketData} listenFor - The response data pattern to listen for
    * @param {Function?} callback - Optional callback function to handle the response
-   * @returns {Promise<t | undefined>} - The retrieved data, or undefined if the request fails or times out after 5 seconds
+   * @returns {Promise<t | undefined>} - The retrieved data still wrapped in its payload, or undefined if the request fails or times out after 5 seconds
    * @version 0.10.4
    *
    * This will automatically return the payload of the response.
@@ -258,7 +341,7 @@ export class DeskThingClass {
    *            { type: 'users', request: 'update' }
    *         );
    *
-   * console.log(data); // prints the user profile data
+   * console.log(data.payload); // prints the user profile data
    *
    * // On the server
    * DeskThing.on('get', (data) => {
@@ -277,7 +360,7 @@ export class DeskThingClass {
    *   { type: 'get', request: 'profile', payload: { userId: '123' } },
    *   { type: 'users', request: 'update' }
    *   async (userData) => {{
-   *      console.log(userData); // prints the user profile data
+   *      console.log(userData.payload); // prints the user profile data
    *   }
    * );
    *
@@ -293,51 +376,61 @@ export class DeskThingClass {
    *  }
    * }
    */
-  public fetch = async <T>(
-    requestData: SocketData,
-    listenFor: SocketData,
-    callbackFn?: (data: T | undefined) => void | Promise<void>
-  ): Promise<T | undefined> => {
+  public fetch = async <
+    T extends ExtractDeviceType<ToClientData>,
+    R extends Extract<ToClientData, { type: T }>["request"] | string
+  >(
+    requestData: ToAppData | ClientToDeviceData,
+    listenFor?: { type: T, request?: R },
+    callbackFn?: (data: ExtractDevicePayload<ToClientData, T, R> | undefined) => void
+  ): Promise<ExtractDevicePayload<ToClientData, T, R> | undefined> => {
     if (!requestData.type) {
       console.warn("Request data must have a type property");
       return undefined;
     }
+
+    if (!listenFor) return
+
     if (!listenFor.type) {
       console.warn("Listen for data must have a type property");
       return undefined;
     }
 
-    const listenKey = `${listenFor.type}-${listenFor.request || 'undefined'}`
+    const listenKey = `${listenFor.type}-${listenFor.request || "undefined"}`;
 
     const timeout = new Promise<undefined>((_, reject) => {
-      setTimeout(
-        () => {
-          
-          return reject(new Error(`Timed out waiting for response: type=${listenFor.type}, request=${listenFor.request || 'undefined'}`))
-        },
-        5000
-      );
+      setTimeout(() => {
+        return reject(
+          new Error(
+            `Timed out waiting for response: type=${listenFor.type}, request=${
+              listenFor.request || "undefined"
+            }`
+          )
+        );
+      }, 5000);
     });
 
     let removeListener: () => void | undefined;
 
-    const dataPromise = new Promise<T>((resolve) => {
-      // First setup the listener to avoid missing the response
-      removeListener = this.once(
-        listenFor.type,
-        (data) => {
-          this.onceListenerKeys.delete(listenKey);
-          resolve(data.payload as T);
-        },
-        listenFor.request
-      );
-      // Send the request only if another process isn't already waiting on it
-      // the onceListenerKey is removed upon the data being returned
-      if (!this.onceListenerKeys.has(listenKey)) {
-        this.send(requestData);
-        this.onceListenerKeys.add(listenKey);
+    const dataPromise = new Promise<ExtractDevicePayload<ToClientData, T, R>>(
+      (resolve) => {
+        // First setup the listener to avoid missing the response
+        removeListener = this.once(
+          listenFor.type,
+          (data) => {
+            this.onceListenerKeys.delete(listenKey);
+            resolve(data);
+          },
+          listenFor.request
+        );
+        // Send the request only if another process isn't already waiting on it
+        // the onceListenerKey is removed upon the data being returned
+        if (!this.onceListenerKeys.has(listenKey)) {
+          this.send(requestData);
+          this.onceListenerKeys.add(listenKey);
+        }
       }
-    });
+    );
 
     const data = Promise.race([dataPromise, timeout]).catch((error) => {
       this.error(error);
@@ -347,7 +440,7 @@ export class DeskThingClass {
     });
 
     if (callbackFn) {
-      data.then(callbackFn);
+      data.then((data) => callbackFn(data));
     }
     return data;
   };
@@ -382,12 +475,15 @@ export class DeskThingClass {
    *  }
    * }
    */
-  public fetchData = async <T>(
+  public fetchData = async <T, E extends string = string>(
     type: string,
-    requestData: SocketData,
+    requestData: Extract<ClientToDeviceData | ToAppData, { type: E }>,
     request?: string
   ): Promise<T | undefined> => {
-    return this.fetch<T>(requestData, { type, request });
+    return this.fetch(
+      requestData,
+      { type, request } as any // Not good typing - but this is depreciated
+    ) as Promise<T | undefined>;
   };
 
   /**
@@ -402,12 +498,20 @@ export class DeskThingClass {
    * }
    */
   public getMusic = async (): Promise<SongData | undefined> => {
-    const musicData = await this.fetchData<SongData>("music", {
-      app: "client",
-      type: "get",
-      request: "music",
-      payload: {},
-    });
+    const socketResponse = await this.fetch(
+      {
+        app: "client",
+        type: CLIENT_REQUESTS.GET,
+        request: "music",
+      },
+      {
+        type: DEVICE_CLIENT.MUSIC
+      },
+    );
+
+    if (!socketResponse) return undefined;
+
+    const musicData = socketResponse.payload
 
     if (musicData && musicData.thumbnail) {
       musicData.thumbnail = this.formatImageUrl(musicData.thumbnail);
@@ -429,12 +533,20 @@ export class DeskThingClass {
    * }
    */
   public getSettings = async (): Promise<AppSettings | undefined> => {
-    return this.fetchData("settings", {
-      app: "client",
-      type: "get",
-      request: "settings",
-      payload: {},
-    });
+    const socketResponse = await this.fetch(
+      {
+        app: "client",
+        type: CLIENT_REQUESTS.GET,
+        request: "settings",
+      },
+      {
+        type: DEVICE_CLIENT.SETTINGS,
+      }
+    );
+
+    if (!socketResponse) return undefined;
+
+    return socketResponse.payload;
   };
 
   /**
@@ -451,27 +563,44 @@ export class DeskThingClass {
    * }
    */
   public getApps = async (): Promise<App[] | undefined> => {
-    return this.fetchData("apps", {
-      app: "client",
-      type: "get",
-      request: "apps",
-      payload: {},
-    });
+    const socketResponse = await this.fetch(
+      {
+        app: "client",
+        type: CLIENT_REQUESTS.GET,
+        request: "apps",
+      },
+      {
+        type: DEVICE_CLIENT.APPS,
+      }
+    );
+
+    if (!socketResponse) return undefined;
+
+    return socketResponse.payload;
   };
 
   /**
    * Returns the URL for the action mapped to the key. Usually, the URL points to an SVG icon.
-   * @param key
+   * @param KeyReference
    * @returns {Promise<string | undefined>} - The URL for the action icon, or undefined if the request fails
    * @version 0.10.4
    */
-  public getKeyIcon = async (key: Key): Promise<string | undefined> => {
-    return this.fetchData(key.id, {
-      app: "client",
-      type: "get",
-      request: "key",
-      payload: key,
-    });
+  public getKeyIcon = async (
+    KeyReference: KeyReference
+  ): Promise<string | undefined> => {
+    const socketResponse = await this.fetch(
+      {
+        app: "client",
+        type: CLIENT_REQUESTS.GET,
+        request: "key",
+        payload: KeyReference,
+      },
+      { type: KeyReference.id }
+    );
+
+    if (!socketResponse) return undefined;
+
+    return socketResponse.payload as string;
   };
   /**
    * Returns the URL for the action . Usually, the URL points to an SVG icon.
@@ -480,14 +609,21 @@ export class DeskThingClass {
    * @version 0.10.4
    */
   public getActionIcon = async (
-    action: Action
+    action: Action | ActionReference
   ): Promise<string | undefined> => {
-    return this.fetchData(action.id, {
-      app: "client",
-      type: "get",
-      request: "action",
-      payload: action,
-    });
+    const socketResponse = await this.fetch(
+      {
+        app: "client",
+        type: CLIENT_REQUESTS.GET,
+        request: "action",
+        payload: action,
+      },
+      { type: action.id }
+    );
+
+    if (!socketResponse) return undefined;
+
+    return socketResponse.payload as string;
   };
 
   /**
@@ -532,15 +668,19 @@ export class DeskThingClass {
    * });
    */
   public triggerAction = async (action: ActionReference): Promise<void> => {
-    this.send({ app: "client", type: "action", payload: action });
+    this.send({
+      app: "client",
+      type: CLIENT_REQUESTS.ACTION,
+      payload: action,
+    });
   };
 
   /**
    * Triggers the action tied to a specific key
-   * @param {KeyTrigger} keyTrigger - The key trigger configuration
-   * @param {string} keyTrigger.key - The key to trigger
-   * @param {EventMode} keyTrigger.mode - The event mode (e.g., 'keydown', 'keyup')
-   * @param {string} [keyTrigger.source] - Optional source of the key trigger (defaults to current app)
+   * @param {KeyReference} KeyReference - The key trigger configuration
+   * @param {string} KeyReference.key - The key to trigger
+   * @param {EventMode} KeyReference.mode - The event mode (e.g., 'keydown', 'keyup')
+   * @param {string} [KeyReference.source] - Optional source of the key trigger (defaults to current app)
    *
    * @example
    * // Trigger a keydown event
@@ -557,8 +697,19 @@ export class DeskThingClass {
    *   source: 'server'
    * });
    */
-  public triggerKey = async (keyTrigger: KeyTrigger): Promise<void> => {
-    this.send({ app: "client", type: "key", payload: keyTrigger });
+  public triggerKey = async (
+    KeyReference: Omit<KeyReference, "source"> & { source?: string }
+  ): Promise<void> => {
+
+    if (!KeyReference.source) {
+      KeyReference.source = this.manifest?.name || "server";
+    }
+
+    this.send({
+      app: "client",
+      type: CLIENT_REQUESTS.KEY,
+      payload: KeyReference as KeyReference,
+    });
   };
 
   /**
@@ -570,12 +721,22 @@ export class DeskThingClass {
       return this.manifest;
     }
 
-    return this.fetchData("manifest", {
-      app: "client",
-      type: "get",
-      request: "manifest",
-      payload: {},
-    });
+    const socketResponse = await this.fetch(
+      {
+        app: "client",
+        type: CLIENT_REQUESTS.GET,
+        request: "manifest",
+      },
+      {
+        type: DEVICE_CLIENT.MANIFEST,
+      }
+    );
+
+    if (!socketResponse) return undefined;
+
+    this.manifest = socketResponse.payload;
+
+    return socketResponse.payload;
   };
 
   /**
@@ -608,7 +769,7 @@ export class DeskThingClass {
    * return <img src={image} alt="Image" />
    */
   public formatImageUrl = (image: string): string => {
-    if (!this.manifest) {
+    if (!this.manifest?.context) {
       return image;
     }
 
@@ -616,10 +777,16 @@ export class DeskThingClass {
       return image;
     }
 
-    return image.replace(
-      "localhost:8891",
-      `${this.manifest.ip}:${this.manifest.port}`
-    );
+    if (this.manifest.context.id == ClientPlatformIDs.CarThing || this.manifest.context.ip == 'localhost') {
+      // If and only if it is localhost or in a car thing context
+      return image.replace(
+        "localhost:8891",
+        `${this.manifest?.context?.ip || 'localhost'}:${this.manifest?.context?.port || 8891}`
+      );
+    }
+
+    return image
+
   };
 
   /**
@@ -633,7 +800,7 @@ export class DeskThingClass {
    *   payload: { buttonClicked: 'submit' }
    * });
    */
-  public sendMessageToParent(data: SocketData) {
+  public sendMessageToParent(data: ToAppData & { app?: string }) {
     this.send(data);
   }
 
@@ -648,7 +815,7 @@ export class DeskThingClass {
    *   payload: { buttonClicked: 'submit' }
    * });
    */
-  public send(data: SocketData) {
+  public send(data: (ClientToDeviceData | ToAppData) & { app?: string }) {
     const payload = {
       app: data.app || undefined,
       type: data.type || undefined,
@@ -661,7 +828,7 @@ export class DeskThingClass {
   /**
    * Logs the message in the console, the client, and the server
    * The extra data logged will not be bubbled anywhere but the console
-   * 
+   *
    * @example
    * DeskThing.log(LOGGING_LEVELS.INFO, 'This is an info message', 'this is extra data');
    * // logs "[CLIENT]: This is an info message this is extra data" to the console
@@ -669,13 +836,18 @@ export class DeskThingClass {
    * // logs "[CLIENT.YourApp] This is an info message" to the server
    */
   public log(level: LOGGING_LEVELS, message: string, ...extraData: any[]) {
-    this.send({ app: "client", type: "log", request: level, payload: { message, data: [ ...extraData ] } });
+    this.send({
+      app: "client",
+      type: CLIENT_REQUESTS.LOG,
+      request: level,
+      payload: { message, data: [...extraData] },
+    });
   }
 
   /**
    * Logs the message in the console, the client, and the server
    * The extra data logged will not be bubbled anywhere but the console
-   * 
+   *
    * @example
    * DeskThing.error('This is an error message', 'this is extra data');
    * // logs "[CLIENT]: This is an error message this is extra data" to the console
@@ -689,7 +861,7 @@ export class DeskThingClass {
   /**
    * Logs the message in the console, the client, and the server
    * The extra data logged will not be bubbled anywhere but the console
-   * 
+   *
    * @example
    * DeskThing.warn('This is a warning message', 'this is extra data');
    * // logs "[CLIENT]: This is a warning message this is extra data" to the console
@@ -703,7 +875,7 @@ export class DeskThingClass {
   /**
    * Logs the message in the console, the client, and the server
    * The extra data logged will not be bubbled anywhere but the console
-   * 
+   *
    * @example
    * DeskThing.debug('This is a debug message', 'this is extra data');
    * // logs "[CLIENT]: This is a debug message this is extra data" to the console
@@ -717,7 +889,7 @@ export class DeskThingClass {
   /**
    * Logs the message in the console, the client, and the server
    * The extra data logged will not be bubbled anywhere but the console
-   * 
+   *
    * @example
    * DeskThing.fatal('This is a fatal message', 'this is extra data');
    * // logs "[CLIENT]: This is a fatal message this is extra data" to the console
@@ -731,7 +903,7 @@ export class DeskThingClass {
   /**
    * Logs the message in the console, the client, and the server
    * The extra data logged will not be bubbled anywhere but the console
-   * 
+   *
    * @example
    * DeskThing.info('This is an info message', 'this is extra data');
    * // logs "[CLIENT]: This is an info message this is extra data" to the console
@@ -741,8 +913,92 @@ export class DeskThingClass {
   public info(message: string, ...extraData: any[]) {
     this.log(LOGGING_LEVELS.LOG, message, ...extraData);
   }
-  
-
 }
 
-export const DeskThing = DeskThingClass.getInstance();
+/**
+/**
+  * Creates a new instance of the DeskThing class
+  * @template CustomIncomingData Type for data that can be received from the socket, defaults to SocketData
+  * @template CustomOutgoingData Type for data that can be sent through the socket, defaults to SocketData
+  * @returns A new instance of the DeskThing class with specified generic types
+  * @example
+  * // Basic usage with default types
+  * const deskThing = createDeskThing();
+  * 
+  * // Usage with custom types
+  * interface MyListenData { message: string }
+  * interface MySendData { status: boolean }
+  * const customDeskThing = createDeskThing<MyListenData, MySendData>();
+  * 
+  * @example
+  * // Very complex usage with strong typing
+  * 
+  * // Define types
+  * type CustomIncomingData = {
+  *   type: 'someData';
+  *   request?: 'opt1' | 'opt2';
+  *   payload: 'someWantedReturnedData'
+  * }
+  * 
+  * type CustomOutgoingData = {
+  *   type: 'getSomeData';
+  *   request?: 'opt1' | 'opt2';
+  *   payload: 'someOtherData'
+  * }
+  * 
+  * // Create the deskthing object
+  * const dk = createDeskThing<CustomIncomingData, CustomOutgoingData>();
+  * 
+  * // ex async function for awaiting
+  * const d = async () => {
+  * 
+  *   // using the fetch() method - everything is strongly typed
+  *   const data = await dk.fetch({
+  *     type: 'getSomeData',
+  *     request: 'opt1',
+  *     payload: 'someOtherData'
+  *   }, {
+  *     type: 'someData',
+  *     request: 'opt1',
+  *   }, (data) => {
+  *     // optional callback hook. data will be 'someWantedReturnedData'
+  *     return data
+  *   })
+  * 
+  *   // data will be 'someWantedReturnedData'
+  *   console.log(data)
+  * 
+  *   const settings = await dk.fetch({
+  *     type: CLIENT_REQUESTS.GET,
+  *     request: 'settings',
+  *     app: 'client'
+  *   }, {
+  *     type: DEVICE_CLIENT.SETTINGS,
+  *   }, (data) => {
+  * 
+  *     console.log('From the callback function', data)
+  *   })
+  *   
+  *   data
+  *   
+  * }
+  */
+export function createDeskThing<
+  CustomIncomingData extends SocketData = SocketData,
+  CustomOutgoingData extends SocketData = SocketData
+>(): DeskThingClass<CustomIncomingData, CustomOutgoingData> {
+  return DeskThingClass.getInstance();
+}
+
+/**
+ * The DeskThing instance.
+ * Only use for utility-functions like encoding images or sending logs
+ *
+ * Do not use for any data fetching/listening, instead use {@link createDeskThing}
+ *
+ * @example
+ * import { DeskThing } from "@deskthing/client";
+ *
+ * DeskThing.sendInfo('This is an info message', 'this is extra data');
+ */
+export const DeskThing = createDeskThing();
