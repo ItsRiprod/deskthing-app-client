@@ -5,9 +5,7 @@ import {
   AppSettings,
   ClientManifest,
   EventMode,
-  FromDeviceData,
   DEVICE_CLIENT,
-  Key,
   KeyReference,
   LOGGING_LEVELS,
   SocketData,
@@ -743,7 +741,7 @@ export class DeskThingClass<
    * Formats an image URL to make the returned string a usable src for an image
    * @param image - A legacy-acceptable image url that can be either base64 OR a url
    * @returns - a usable URL
-   *
+   * @depreciated - use {@link DeskThing.useProxy} instead
    * @example
    * //server
    * DeskThing.on('getImage', (socketData: SocketData) => {
@@ -786,8 +784,28 @@ export class DeskThingClass<
     }
 
     return image
-
   };
+
+  /**
+   * Use the proxy to fetch an image from the server
+   * 
+   * version 1
+   * 
+   * @param url - The url to fetch
+   * @returns - The proxied url that can be used to fetch the image
+   * @example
+   * const imageUrl = DeskThing.useProxy('https://example.com/image.png')
+   * return <img src={imageUrl} alt="Image" />
+   */
+  public useProxy = (url: string): string => {
+
+    // Handle data urls
+    if (url.startsWith('data:image')) {
+          return url;
+    }
+
+    return `http://${this.manifest?.context?.ip || 'localhost'}:${this.manifest?.context?.port || 8891}/proxy/v1?url=${encodeURIComponent(url)}`
+  }
 
   /**
    * Sends a message to the parent window.
