@@ -31,8 +31,8 @@ type ExtractClientPayload<
   R extends ExtractClientRequest<D, T> | undefined
 > = Extract<ClientToDeviceData, { type: T; request?: R }> extends never
   ? T extends string
-    ? D
-    : Extract<D, { type: T; request?: R }>
+  ? D
+  : Extract<D, { type: T; request?: R }>
   : Extract<ClientToDeviceData, { type: T; request?: R }>;
 
 // DeskThing To App Type Helpers
@@ -77,6 +77,8 @@ export class DeskThingClass<
   } = {};
   private onceListenerKeys: Set<string> = new Set();
 
+  private keyOverrides: Set<string> = new Set();
+
   /**
    * Initializes the DeskThing instance and sets up event listeners.
    * Sends a message to the parent indicating that the client has started.
@@ -114,11 +116,21 @@ export class DeskThingClass<
       if (event instanceof KeyboardEvent) {
         // Get the code for the key that was pressed
         const key = event.code;
+
+        if (this.keyOverrides.has(key.toLowerCase())) {
+          return; // Skip default DeskThing handling
+        }
+
         const mode =
           event.type === "keydown" ? EventMode.KeyDown : EventMode.KeyUp;
         this.triggerKey({ id: key, mode });
       } else if (event instanceof WheelEvent) {
         // Initialize the mode of the button press
+
+        if (this.keyOverrides.has('wheel')) {
+          return; // Skip default DeskThing handling
+        }
+
         let mode = EventMode.ScrollUp;
 
         if (event.deltaY > 0) mode = EventMode.ScrollDown;
@@ -154,6 +166,26 @@ export class DeskThingClass<
     fetchManifest();
 
     this.on(DEVICE_CLIENT.MANIFEST, handleManifest);
+  }
+
+  /**
+ * Prevents default DeskThing handling for specific keys
+ * @param keys - Array of key codes to override (e.g., ['KeyA', 'Enter', 'Space'])
+ * @example
+ * deskThing.overrideKeys(['KeyA', 'Enter', 'Scroll']);
+ */
+  public overrideKeys(keys: string[]): void {
+    keys.forEach(key => this.keyOverrides.add(key.toLowerCase()));
+  }
+
+  /**
+   * Removes key overrides
+   * @param keys - Array of key codes to restore default
+   * @example
+   * deskThing.restoreKeys(['KeyA', 'Enter', 'Scroll']);
+   */
+  public restoreKeys(keys: string[]): void {
+    keys.forEach(key => this.keyOverrides.delete(key.toLowerCase()));
   }
 
   /**
@@ -400,8 +432,7 @@ export class DeskThingClass<
       setTimeout(() => {
         return reject(
           new Error(
-            `Timed out waiting for response: type=${listenFor.type}, request=${
-              listenFor.request || "undefined"
+            `Timed out waiting for response: type=${listenFor.type}, request=${listenFor.request || "undefined"
             }`
           )
         );
@@ -801,7 +832,7 @@ export class DeskThingClass<
 
     // Handle data urls
     if (url.startsWith('data:image')) {
-          return url;
+      return url;
     }
 
     return `http://${this.manifest?.context?.ip || 'localhost'}:${this.manifest?.context?.port || 8891}/proxy/v1?url=${encodeURIComponent(url)}`
@@ -838,7 +869,7 @@ export class DeskThingClass<
       app: data.app || undefined,
       type: data.type || undefined,
       request: data.request || null,
-      payload: data.payload || null,
+      payload: data.payload ?? null,
     };
     window.parent.postMessage({ type: "IFRAME_ACTION", payload: payload }, "*");
   }

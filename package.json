@@ -1,6 +1,6 @@
 {
   "name": "@deskthing/client",
-  "version": "0.10.14",
+  "version": "0.11.1",
   "description": "The Deskthing connector for the client webapps",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
