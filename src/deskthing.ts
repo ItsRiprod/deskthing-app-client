@@ -696,11 +696,15 @@ export class DeskThingClass<
    *   }
    * });
    */
-  public triggerAction = async (action: ActionReference): Promise<void> => {
+  public triggerAction = async (action: Omit<ActionReference, "source" | "enabled"> & { source?: string; enabled?: boolean }): Promise<void> => {
     this.send({
       app: "client",
       type: CLIENT_REQUESTS.ACTION,
-      payload: action,
+      payload: {
+        ...action,
+        enabled: action.enabled ?? true,
+        source: action.source || this.manifest?.id || 'server'
+      } as ActionReference,
     });
   };
 
