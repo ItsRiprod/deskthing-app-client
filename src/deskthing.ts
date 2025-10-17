@@ -75,6 +75,8 @@ export class DeskThingClass<
       string
     >[];
   } = {};
+
+  private binaryListeners: ((payload: ArrayBuffer) => void | Promise<void>)[] = [];
   private onceListenerKeys: Set<string> = new Set();
 
   private keyOverrides: Set<string> = new Set();
@@ -239,6 +241,13 @@ export class DeskThingClass<
     return () => this.off(type, callback);
   }
 
+  onBinary(callback: (payload: ArrayBuffer) => void | Promise<void>): () => void {
+    this.binaryListeners.push(callback);
+    return () => {
+      this.binaryListeners = this.binaryListeners.filter((cb) => cb !== callback);
+    }
+  }
+
   /**
    * Removes an event listener for a specific event type.
    * @param {string} type - The type of event to remove the listener from
@@ -268,6 +277,13 @@ export class DeskThingClass<
   private handleMessage(event: MessageEvent) {
     // Return if the message is not from the deskthing
     if (event.data.source !== "deskthing") return;
+
+    // Handle binary data
+    if (event.data.type === "IFRAME_BINARY" && event.data.payload instanceof ArrayBuffer) {
+      this.emitBinary(event.data.payload);
+      return;
+    }
+
     const socketData = event.data as ExtractDevicePayload<
       ToClientData,
       string,
@@ -311,6 +327,22 @@ export class DeskThingClass<
       );
     }
   }
+
+  private async emitBinary(payload: ArrayBuffer): Promise<void> {
+    const callbacks = this.binaryListeners;
+    if (callbacks) {
+      const promises = callbacks.map(async (callback) => {
+        try {
+          await callback(payload);
+        } catch (error) {
+          console.error("Error in binary event callback:", error);
+        }
+      });
+      // Doesn't await for all of the callbacks to finish being run
+      await Promise.all(promises);
+    }
+  }
+
   /**
    * Listens for a single occurrence of an event, then removes the listener
    * @param {string} type - The event type to listen for
@@ -814,7 +846,7 @@ export class DeskThingClass<
       // If and only if it is localhost or in a car thing context
       return image.replace(
         "localhost:8891",
-        `${this.manifest?.context?.ip || 'localhost'}:${this.manifest?.context?.port || 8891}`
+        `${this.manifest?.context?.ip || window.location.hostname || 'localhost'}:${this.manifest?.context?.port || window.location.port || 8891}`
       );
     }
 
@@ -839,7 +871,8 @@ export class DeskThingClass<
       return url;
     }
 
-    return `http://${this.manifest?.context?.ip || 'localhost'}:${this.manifest?.context?.port || 8891}/proxy/v1?url=${encodeURIComponent(url)}`
+    // return a proxy url based on the window.location if the manifest is not available
+    return `http://${this.manifest?.context?.ip || window.location.hostname || 'localhost'}:${this.manifest?.context?.port || window.location.port || 8891}/proxy/v1?url=${encodeURIComponent(url)}`
   }
 
   /**
@@ -877,6 +910,25 @@ export class DeskThingClass<
     };
     window.parent.postMessage({ type: "IFRAME_ACTION", payload: payload }, "*");
   }
+
+  /**
+ * Sends binary data to the parent for forwarding to the server.
+ * The parent will add the appId.
+ * @param data - The binary data (ArrayBuffer)
+ */
+  public sendBinary = async (data: ArrayBuffer) => {
+    let arrayBuffer: ArrayBuffer;
+    if (data instanceof ArrayBuffer) {
+      arrayBuffer = data;
+    } else {
+      throw new Error("Unsupported binary type");
+    }
+    window.parent.postMessage(
+      { type: "IFRAME_BINARY", payload: arrayBuffer },
+      "*",
+      [arrayBuffer]
+    );
+  };
 
   /**
    * Logs the message in the console, the client, and the server
