@@ -925,8 +925,7 @@ export class DeskThingClass<
     }
     window.parent.postMessage(
       { type: "IFRAME_BINARY", payload: arrayBuffer },
-      "*",
-      [arrayBuffer]
+      "*"
     );
   };
 
